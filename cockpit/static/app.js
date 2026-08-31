@@ -27,10 +27,21 @@ function fmtNum(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function zeigeFehler(msg) {
-  const el = document.getElementById("fehler-banner");
+// Mehrere Fehlerquellen können gleichzeitig aktiv sein (z. B. Regeln-Laden
+// schlägt fehl, Stand-Laden gelingt danach) — eine erfolgreiche Quelle darf
+// den Banner einer anderen, weiterhin fehlgeschlagenen Quelle NICHT stumm
+// überschreiben. Darum je Quelle ein Eintrag, Banner zeigt alle aktiven.
+const fehlerQuellen = new Map();
+
+function zeigeFehler(quelle, msg) {
   if (msg) {
-    el.textContent = "⚠ " + msg;
+    fehlerQuellen.set(quelle, msg);
+  } else {
+    fehlerQuellen.delete(quelle);
+  }
+  const el = document.getElementById("fehler-banner");
+  if (fehlerQuellen.size) {
+    el.textContent = "⚠ " + [...fehlerQuellen.values()].join("  ·  ");
     el.hidden = false;
   } else {
     el.hidden = true;
@@ -49,9 +60,38 @@ function zeigeHinweis(msg) {
 
 // ---------------------------------------------------------------- Laden ----
 
+// Holt JSON von der lokalen API und wirft bei Transportfehlern (Server nicht
+// erreichbar, Nicht-2xx-Status) einen Error mit verständlicher deutscher
+// Meldung — nie ein stilles Scheitern. Nutzt d.fehler aus der Antwort, wenn
+// vorhanden, sonst einen generischen Text mit Status/URL.
+async function holeJson(url, optionen) {
+  let antwort;
+  try {
+    antwort = await fetch(url, optionen);
+  } catch (netzwerkFehler) {
+    throw new Error(`Server nicht erreichbar (${url}) — läuft das Cockpit noch?`);
+  }
+  let daten = null;
+  try {
+    daten = await antwort.json();
+  } catch (parseFehler) {
+    daten = null;
+  }
+  if (!antwort.ok) {
+    const meldung = (daten && daten.fehler) ? daten.fehler : `Serverfehler ${antwort.status} bei ${url}.`;
+    throw new Error(meldung);
+  }
+  return daten;
+}
+
 async function ladeStand() {
-  const d = await (await fetch("/api/stand")).json();
-  anwenden(d);
+  try {
+    const d = await holeJson("/api/stand");
+    zeigeFehler("stand-transport", "");
+    anwenden(d);
+  } catch (err) {
+    zeigeFehler("stand-transport", "Stand konnte nicht geladen werden: " + err.message);
+  }
 }
 
 function knopfDeaktivieren(state) {
@@ -63,9 +103,12 @@ function knopfDeaktivieren(state) {
 async function abrufen() {
   knopfDeaktivieren(true);
   try {
-    const d = await (await fetch("/api/abruf", { method: "POST" })).json();
+    const d = await holeJson("/api/abruf", { method: "POST" });
+    zeigeFehler("abruf-transport", "");
     anwenden(d);
     ladeProtokoll();
+  } catch (err) {
+    zeigeFehler("abruf-transport", "Abruf fehlgeschlagen: " + err.message);
   } finally {
     knopfDeaktivieren(false);
   }
@@ -84,7 +127,7 @@ function anwenden(d) {
 // ------------------------------------------------------------ Kennzahlen ----
 
 function renderKennzahlen(k, stand, fehler) {
-  zeigeFehler(fehler);
+  zeigeFehler("stand", fehler);
   const leer = !k || k.mitglieder === undefined;
   document.getElementById("kpi-erfuellt").textContent =
     leer ? "– / –" : `${k.erfuellt} / ${k.mitglieder}`;
@@ -359,15 +402,24 @@ function aktualisiereAbgleichHelferStatus(d) {
 }
 
 async function fairgateHochladen(datei) {
-  const r = await fetch("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
+  let r;
+  try {
+    r = await fetch("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
+  } catch (netzwerkFehler) {
+    const meldung = "Server nicht erreichbar (/api/fairgate) — läuft das Cockpit noch?";
+    zeigeFehler("fairgate", meldung);
+    document.getElementById("abgleich-ergebnis").innerHTML =
+      `<p class="resultlead">Fehler: ${esc(meldung)}</p>`;
+    throw new Error(meldung);
+  }
   const d = await r.json();
   if (!r.ok) {
-    zeigeFehler(d.fehler);
+    zeigeFehler("fairgate", d.fehler);
     document.getElementById("abgleich-ergebnis").innerHTML =
       `<p class="resultlead">Fehler: ${esc(d.fehler)}</p>`;
     throw new Error(d.fehler);
   }
-  zeigeFehler("");
+  zeigeFehler("fairgate", "");
   renderAbgleich(d);
   ladeProtokoll();
   return d;
@@ -420,8 +472,13 @@ async function kopierePfad(pfad) {
 // --------------------------------------------------------------- Regeln ----
 
 async function ladeRegeln() {
-  regelnAktuell = await (await fetch("/api/regeln")).json();
-  befuelleRegelnFormular();
+  try {
+    regelnAktuell = await holeJson("/api/regeln");
+    zeigeFehler("regeln-transport", "");
+    befuelleRegelnFormular();
+  } catch (err) {
+    zeigeFehler("regeln-transport", "Regeln konnten nicht geladen werden: " + err.message);
+  }
 }
 
 function kategorieZeileHinzufuegen(k) {
@@ -471,20 +528,26 @@ async function speichereRegeln(ev) {
     if (!r.ok) throw new Error(d.fehler || "Fehler beim Speichern.");
     regelnAktuell = payload;
     statusEl.textContent = "Gespeichert.";
+    zeigeFehler("regeln-speichern", "");
     zeigeHinweis("Regeln gespeichert.");
     renderTabelle();
     if (letzterStand) renderBericht(letzterStand);
   } catch (err) {
     statusEl.textContent = "Fehler: " + err.message;
-    zeigeFehler(err.message);
+    zeigeFehler("regeln-speichern", err.message);
   }
 }
 
 // ------------------------------------------------------------- Protokoll ----
 
 async function ladeProtokoll() {
-  const liste = await (await fetch("/api/protokoll")).json();
-  renderProtokoll(liste);
+  try {
+    const liste = await holeJson("/api/protokoll");
+    zeigeFehler("protokoll-transport", "");
+    renderProtokoll(liste);
+  } catch (err) {
+    zeigeFehler("protokoll-transport", "Protokoll konnte nicht geladen werden: " + err.message);
+  }
 }
 
 function formatZeit(iso) {
@@ -528,12 +591,12 @@ async function saeumigenCsv() {
   try {
     const r = await fetch(`/api/export/saeumige?sicht=${encodeURIComponent(sichtAktuell)}`, { method: "POST" });
     const d = await r.json();
-    if (!r.ok) { zeigeFehler(d.fehler || "Fehler beim CSV-Export."); return; }
-    zeigeFehler("");
+    if (!r.ok) { zeigeFehler("saeumigen-csv", d.fehler || "Fehler beim CSV-Export."); return; }
+    zeigeFehler("saeumigen-csv", "");
     zeigeHinweis(`Säumigen-CSV erzeugt: ${d.anzahl} Mitglieder → ${d.datei}`);
     ladeProtokoll();
   } catch (err) {
-    zeigeFehler(String(err));
+    zeigeFehler("saeumigen-csv", "Säumigen-CSV fehlgeschlagen: " + String(err.message || err));
   }
 }
 
@@ -602,8 +665,28 @@ document.getElementById("regeln-kategorie-hinzu").addEventListener("click", () =
 document.getElementById("regeln-formular").addEventListener("submit", speichereRegeln);
 
 document.addEventListener("DOMContentLoaded", async () => {
-  setSicht("saison");
-  await ladeRegeln();
-  await ladeStand();
-  await ladeProtokoll();
+  // Jeder Schritt fängt seine eigenen Fehler bereits intern ab (siehe
+  // ladeRegeln/ladeStand/ladeProtokoll) und zeigt sie sichtbar an. Zusätzlich
+  // hier je Schritt try/catch: ein Fehlschlag darf die übrigen Startaufrufe
+  // nie stumm verhindern, auch nicht bei einem unerwarteten Absturz.
+  try {
+    setSicht("saison");
+  } catch (err) {
+    zeigeFehler("start-sicht", "Start fehlgeschlagen (Ansicht): " + err.message);
+  }
+  try {
+    await ladeRegeln();
+  } catch (err) {
+    zeigeFehler("regeln-transport", "Regeln konnten nicht geladen werden: " + err.message);
+  }
+  try {
+    await ladeStand();
+  } catch (err) {
+    zeigeFehler("stand-transport", "Stand konnte nicht geladen werden: " + err.message);
+  }
+  try {
+    await ladeProtokoll();
+  } catch (err) {
+    zeigeFehler("protokoll-transport", "Protokoll konnte nicht geladen werden: " + err.message);
+  }
 });
