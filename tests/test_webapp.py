@@ -232,6 +232,25 @@ def test_ungueltige_sicht_liefert_400_statt_keyerror(server):
         assert d["fehler"]
 
 
+def test_api_abruf_log_zaehlt_hinweise(tmp_path):
+    z = _zustand(tmp_path)
+    z.api_client_factory = lambda: _OkClient(z.helpers)
+    srv = starte_server(z, port=0)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        basis = f"http://127.0.0.1:{srv.server_address[1]}"
+        req = urllib.request.Request(basis + "/api/abruf", method="POST", data=b"")
+        with urllib.request.urlopen(req) as r:
+            d = json.loads(r.read())
+        with urllib.request.urlopen(basis + "/api/protokoll") as r:
+            protokoll_liste = json.loads(r.read())
+        eintrag = next(e for e in protokoll_liste if e["aktion"] == "api-abruf")
+        assert eintrag["hinweise"] == d["kennzahlen"]["hinweise"]
+    finally:
+        srv.shutdown()
+
+
 def test_abruf_fehler_lasst_alte_anzeige_stehen(tmp_path):
     z = _zustand(tmp_path)
     z.api_client_factory = lambda: _LeererClient()
