@@ -232,13 +232,20 @@ function renderTabelle() {
       accountsZelle = `<button class="acct-badge" data-toggle="${detailId}" data-count="${m.accounts.length}" aria-expanded="false">▸ ${m.accounts.length}</button>`;
     }
 
+    // I4: Soll-Konflikt (mehrere Mitglieds-Accounts derselben FG-Nummer, D3) sichtbar
+    // machen, damit die Zeile nicht wie ein normaler Einzel-Soll-Wert gelesen wird.
+    const konfliktTitel = "Mehrere Mitglieds-Accounts — im Portal bereinigen";
+    const konfliktBadge = m.soll_konflikt
+      ? ` <span class="soll-konflikt" title="${esc(konfliktTitel)}" style="color:var(--red-ink)">⚠</span>`
+      : "";
+
     const tr = document.createElement("tr");
-    tr.className = "member";
+    tr.className = "member" + (m.soll_konflikt ? " soll-konflikt-zeile" : "");
     tr.innerHTML = `
       <td><span class="name">${esc(m.name)}</span> <span class="fg">${esc(m.fg)}</span></td>
       <td>${esc((m.gruppen || []).join(", "))}</td>
       <td>${accountsZelle}</td>
-      <td class="num">${fmtNum(ziel)}</td>
+      <td class="num">${fmtNum(ziel)}${konfliktBadge}</td>
       <td class="num">${istZelle}</td>
       <td><span class="bar"><i class="${barKlasse}" style="width:${pct}%"></i></span></td>
       <td><span class="status ${statusKlasse}">${statusText}</span></td>`;
@@ -286,8 +293,11 @@ function renderHinweise(hinweise) {
       betroffeneText = ` — ${auszug.map(esc).join(", ")}` +
         (h.betroffene.length > auszug.length ? ` (+${h.betroffene.length - auszug.length} weitere)` : "");
     }
-    li.innerHTML = `<span class="sev ${SEV[h.schweregrad] || "info"}"></span>` +
-      `<span><b>${esc(h.code)}</b> ${esc(h.text)}${betroffeneText}</span>`;
+    // Rein visuelles Abhaken zur persönlichen Übersicht beim Abarbeiten — wird nirgends
+    // gespeichert, verschwindet beim nächsten Laden der Hinweise wieder.
+    li.innerHTML = `<label class="dq-check"><input type="checkbox">` +
+      `<span class="sev ${SEV[h.schweregrad] || "info"}"></span>` +
+      `<span><b>${esc(h.code)}</b> ${esc(h.text)}${betroffeneText}</span></label>`;
     ul.appendChild(li);
   }
 }
