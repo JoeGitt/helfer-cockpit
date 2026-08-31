@@ -18,4 +18,10 @@ def lese(pfad, max_eintraege=200):
     if not pfad.exists():
         return []
     zeilen = pfad.read_text(encoding="utf-8").strip().splitlines()
-    return [json.loads(z) for z in reversed(zeilen[-max_eintraege:])]
+    eintraege = []
+    for z in reversed(zeilen[-max_eintraege:]):
+        try:
+            eintraege.append(json.loads(z))
+        except json.JSONDecodeError:
+            continue    # eine einzelne kaputte Zeile darf das restliche Protokoll nicht sperren
+    return eintraege

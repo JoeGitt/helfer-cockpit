@@ -25,13 +25,22 @@ def hole_key(reset=False):
         import keyring
     except ImportError:
         sys.exit("Fehlt: das Paket «keyring». Bitte einmalig:  pip install openpyxl keyring")
-    key = None if reset else keyring.get_password(KEYRING_SERVICE, ORG_SLUG)
+    key = None
+    if not reset:
+        try:
+            key = keyring.get_password(KEYRING_SERVICE, ORG_SLUG)
+        except Exception as e:
+            sys.exit("Schlüsselbund des Betriebssystems nicht erreichbar (%s). "
+                     "Zugriff im System prüfen oder mit --key-reset neu erfassen." % e)
     if not key:
         print("Der API-Key wird sicher im Schlüsselbund des Betriebssystems abgelegt.")
         key = getpass.getpass("HELFEREINSATZ API-Key eingeben (Eingabe bleibt unsichtbar): ").strip()
         if not key:
             sys.exit("Kein Key eingegeben, abgebrochen.")
-        keyring.set_password(KEYRING_SERVICE, ORG_SLUG, key)
+        try:
+            keyring.set_password(KEYRING_SERVICE, ORG_SLUG, key)
+        except Exception as e:
+            sys.exit("Key konnte nicht im Schlüsselbund gespeichert werden (%s)." % e)
         print("Key gespeichert.\n")
     return key
 
@@ -58,6 +67,8 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

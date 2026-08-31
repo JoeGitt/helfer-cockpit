@@ -28,3 +28,12 @@ def test_format_fehler_bei_unbekannter_struktur():
     with pytest.raises(ApiFehler) as e:
         c.helpers()
     assert e.value.art == "format"
+
+
+def test_format_fehler_bei_nicht_numerischem_pagesnum():
+    c = ApiClient("key", hole=_fake_hole({
+        "helpers/1": {"pageNo": 1, "pagesNum": "viele", "entries": [{"id": 1}]},
+    }))
+    with pytest.raises(ApiFehler) as e:
+        c.helpers()
+    assert e.value.art == "format"

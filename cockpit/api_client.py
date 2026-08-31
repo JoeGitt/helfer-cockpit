@@ -42,7 +42,13 @@ class ApiClient:
                 raise ApiFehler("format",
                     "Unerwartete API-Antwort bei %s — hat sich die API geändert?" % pfad_ohne_seite)
             eintraege.extend(daten.get("entries") or [])
-            if seite >= int(daten.get("pagesNum") or 1):
+            try:
+                pages_num = int(daten.get("pagesNum") or 1)
+            except (TypeError, ValueError):
+                raise ApiFehler("format",
+                    "Unerwartetes Format für pagesNum bei %s — hat sich die API geändert?"
+                    % pfad_ohne_seite)
+            if seite >= pages_num:
                 return eintraege
             seite += 1
 
