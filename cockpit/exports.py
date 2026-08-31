@@ -99,6 +99,11 @@ def handarbeitsliste_html(e):
         teile.append("<h2>Klärliste (in Fairgate nachtragen)</h2><ul>")
         teile += [punkt(t) for t in e.klaerliste]
         teile.append("</ul>")
-    if not (schluessel or austritte or leerungen or e.duplikat_warnungen or e.klaerliste):
+    if e.unbekannte_kategorien:
+        teile.append("<h2>Unbekannte Fairgate-Kategorien (Regeln prüfen)</h2><ul>")
+        teile += [punkt(t) for t in e.unbekannte_kategorien]
+        teile.append("</ul>")
+    if not (schluessel or austritte or leerungen or e.duplikat_warnungen or e.klaerliste
+            or e.unbekannte_kategorien):
         teile.append("<p>Nichts zu tun — alles synchron. 🎉</p>")
     return "\n".join(teile)

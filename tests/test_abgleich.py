@@ -100,3 +100,129 @@ def test_sicherheitsstopp_ohne_fg_nummern():
     accounts = [_acc(i, f"A{i}", "B", f"{i}@example.ch", None) for i in range(10)]
     with pytest.raises(ValueError):
         gleiche_ab([_kontakt(1, "X", "Y")], accounts, REGELN, HEUTE)
+
+
+# ---- C1: Korrektur-Zeilen dürfen adminRemarks nie überschreiben ----------
+
+def test_wert_korrektur_ueberschreibt_bemerkungen_nicht():
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "l@example.ch",
+                      "phone": "079 111 22 33", "adminRemarks": "Zahlt bar, Trainerin, FG-1",
+                      "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    k = _kontakt(1, "Lina", "Brunner", mail="l@example.ch", geb="2000-01-01")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    korr = [z for z in e.korrekturen if z.vorname == "Lina"]
+    assert len(korr) == 1 and korr[0].bemerkungen == ""
+
+
+def test_zweitaccount_null_korrektur_ueberschreibt_bemerkungen_nicht():
+    haupt = _acc(1, "Lina", "Brunner", "l@example.ch", "FG-1")
+    frei = classify({"id": 2, "firstName": "Rita", "lastName": "Gerber", "email": "r@example.ch",
+                     "adminRemarks": "Zahlt bar, Trainerin, FG-1",
+                     "groups": [{"id": 1, "name": "Freiwillige"}],
+                     "stateCache": {"requestedValue": 2.0, "plannedValue": 0}})
+    e = gleiche_ab([_kontakt(1, "Lina", "Brunner", mail="l@example.ch", geb="2000-01-01")],
+                   [haupt, frei], REGELN, HEUTE)
+    korr = [z for z in e.korrekturen if z.vorname == "Rita"]
+    assert len(korr) == 1 and korr[0].bemerkungen == ""
+
+
+def test_fg_nachtrag_bei_leerer_bemerkung_behaelt_fg_als_bemerkung():
+    # D4-Zweig bleibt unverändert: hier IST das Schreiben der Zweck.
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
+                      "adminRemarks": "", "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
+    k = FgKontakt(fg="FG-7", vorname="Lina", nachname="Brunner", email="lina@example.ch",
+                 telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    korr = [z for z in e.korrekturen if z.vorname == "Lina"]
+    assert len(korr) == 1 and korr[0].bemerkungen == "FG-7"
+
+
+# ---- I2: Unbekannte Fairgate-Kategorien warnen statt still Austritte -----
+
+def test_unbekannte_kategorie_erzeugt_warnung_kein_austritt_kein_neueintritt():
+    konto = _acc(1, "Weg", "Gezogen", "w@example.ch", "FG-1")
+    k = _kontakt(1, "Weg", "Gezogen", mail="w@example.ch", kategorie="Vereinsfremd", geb="2000-01-01")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    assert e.neueintritte == []
+    assert not any(h.art == "austritt" for h in e.handarbeit)
+    assert len(e.unbekannte_kategorien) == 1
+    assert "Vereinsfremd" in e.unbekannte_kategorien[0]
+    assert "1 Kontakten" in e.unbekannte_kategorien[0]
+
+
+def test_bekannte_nicht_pflichtige_kategorie_erzeugt_keine_warnung():
+    e = gleiche_ab([_kontakt(9, "P", "Passiv", kategorie="Passivmitglied")], [], REGELN, HEUTE)
+    assert e.unbekannte_kategorien == []
+
+
+def test_unbekannte_kategorie_neueintritt_wird_nicht_angelegt():
+    e = gleiche_ab([_kontakt(9, "Neu", "Kind", kategorie="Vereinsfremd")], [], REGELN, HEUTE)
+    assert e.neueintritte == [] and len(e.unbekannte_kategorien) == 1
+
+
+# ---- I6: FG-Nachtrag nur für Mitglieds-Accounts + Namens-Warnung ---------
+
+def test_fg_nachtrag_ignoriert_nicht_mitglieds_accounts():
+    # Konto ohne FG, aber Typ Freiwillig (nicht Mitglied) — kein automatischer FG-Nachtrag.
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
+                      "adminRemarks": "", "groups": [{"id": 1, "name": "Freiwillige"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
+    k = FgKontakt(fg="FG-7", vorname="Lina", nachname="Brunner", email="lina@example.ch",
+                 telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    assert e.korrekturen == []
+    assert len(e.duplikat_warnungen) == 1
+    assert "namensgleicher" in e.duplikat_warnungen[0].lower()
+
+
+def test_namensgleicher_account_ohne_fg_wird_gewarnt_nicht_importiert():
+    konto = classify({"id": 1, "firstName": "Noah", "lastName": "Keller", "email": "alt@example.ch",
+                      "adminRemarks": "", "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
+    k = FgKontakt(fg="FG-8", vorname="Noah", nachname="Keller", email="neu@example.ch",
+                 telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.korrekturen == [] and e.klaerliste == []
+    assert len(e.duplikat_warnungen) == 1
+    assert "Noah Keller" in e.duplikat_warnungen[0]
+
+
+# ---- Minor: Geburtsdatum auch DD.MM.YYYY, unparseable -> Klärliste ------
+
+def test_geburtsdatum_deutsches_format_wird_erkannt():
+    e = gleiche_ab([_kontakt(9, "Neu", "Kind", geb="01.04.2012")], [], REGELN, HEUTE)
+    assert len(e.neueintritte) == 1
+    assert e.neueintritte[0].email == "eltern@example.ch"   # unter 16 -> Eltern-Mail
+
+
+def test_geburtsdatum_unparsebar_landet_auf_klaerliste():
+    e = gleiche_ab([_kontakt(9, "Neu", "Kind", geb="nicht-lesbar")], [], REGELN, HEUTE)
+    assert e.neueintritte == []
+    assert len(e.klaerliste) == 1
+    assert "Geburtsdatum" in e.klaerliste[0]
+
+
+def test_geburtsdatum_unparsebar_loest_keinen_austritt_aus():
+    # Mitglied bleibt trotz kaputtem Geburtsdatum als "in Fairgate vorhanden" gezählt.
+    konto = _acc(1, "Alt", "Konto", "alt@example.ch", "FG-1")
+    k = _kontakt(1, "Alt", "Konto", mail="alt@example.ch", geb="kaputt")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    assert not any(h.art == "austritt" for h in e.handarbeit)
+
+
+# ---- Minor: Duplikat-Wächter-Set um zusatz_email1/2 erweitert -----------
+
+def test_duplikat_waechter_beruecksichtigt_zusatz_email():
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "primaer@example.ch",
+                      "additionalEmail1": "lina@example.ch", "adminRemarks": "",
+                      "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
+    k = _kontakt(9, "lina", "brunner", mail="lina@example.ch", geb="2000-01-01")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1

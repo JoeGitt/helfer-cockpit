@@ -88,3 +88,24 @@ def test_handarbeitsliste_html_zeigt_feld_leerungen():
                          zusammenfassung="Alles synchron bei 1 geprüften Mitgliedern.")
     html = handarbeitsliste_html(e)
     assert "Felder leeren" in html and "Lina Brunner" in html
+
+
+def test_korrektur_zeile_ueberschreibt_bemerkungen_zelle_nicht(tmp_path):
+    # C1: Korrektur-Zeilen (Match über Vorname/Nachname/E-Mail-Tripel) dürfen adminRemarks im
+    # Portal nie überschreiben — eine leere Bemerkungen-Zelle im Import lässt das Feld in Ruhe.
+    pfad = tmp_path / "korrektur.xlsx"
+    schreibe_import_xlsx([ImportZeile(vorname="Lina", nachname="Brunner",
+                                      email="l@example.ch", zielwert="2", bemerkungen="")], pfad)
+    ws = openpyxl.load_workbook(pfad).active
+    zeile = [c.value for c in ws[2]]
+    assert zeile[0] == "Lina" and zeile[9] == "2"
+    assert zeile[10] is None      # Bemerkungen-Zelle bleibt leer, nicht die FG-Nummer
+
+
+def test_handarbeitsliste_html_zeigt_unbekannte_kategorien():
+    e = AbgleichErgebnis(
+        unbekannte_kategorien=["Unbekannte Fairgate-Kategorie ‹Vereinsfremd› bei 2 Kontakten — "
+                               "Regeln prüfen, diese Kontakte wurden NICHT abgeglichen."],
+        zusammenfassung="Alles synchron bei 2 geprüften Mitgliedern.")
+    html = handarbeitsliste_html(e)
+    assert "Vereinsfremd" in html and "NICHT abgeglichen" in html
