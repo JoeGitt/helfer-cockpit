@@ -50,3 +50,26 @@ def test_bindet_nur_lokal(tmp_path):
     srv = starte_server(_zustand(tmp_path), port=0)
     assert srv.server_address[0] == "127.0.0.1"
     srv.server_close()
+
+
+class _LeererClient:
+    """Stub: liefert 0 Helfende (Spez. 6.4: unplausibel, Abbruch)."""
+    def helpers(self):
+        return []
+
+
+def test_abruf_fehler_lasst_alte_anzeige_stehen(tmp_path):
+    z = _zustand(tmp_path)
+    z.api_client_factory = lambda: _LeererClient()
+    srv = starte_server(z, port=0)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        basis = f"http://127.0.0.1:{srv.server_address[1]}"
+        req = urllib.request.Request(basis + "/api/abruf", method="POST", data=b"")
+        with urllib.request.urlopen(req) as r:
+            d = json.loads(r.read())
+        assert d["fehler"]
+        assert d["kennzahlen"]["mitglieder"] == 3
+    finally:
+        srv.shutdown()

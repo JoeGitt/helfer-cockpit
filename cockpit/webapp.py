@@ -2,7 +2,7 @@
 import datetime
 import json
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -69,7 +69,7 @@ def baue_dashboard(z):
 
 
 def starte_server(zustand, port=0):
-    class Handler(BaseHTTPRequestHandler):
+    class CockpitHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):      # keine Zugriffe auf stdout spammen
             pass
 
@@ -113,10 +113,13 @@ def starte_server(zustand, port=0):
             if u.path == "/api/abruf":
                 try:
                     client = zustand.api_client_factory()
-                    zustand.helpers = client.helpers()
-                    if not zustand.helpers:
+                    neue_helpers = client.helpers()
+                    if not neue_helpers:
                         raise RuntimeError("Die API hat 0 Helfende geliefert — unplausibel, "
                                            "Anzeige nicht aktualisiert.")
+                    # Erst validieren, dann übernehmen: bei Fehler bleibt der zuletzt
+                    # geladene Stand sichtbar (Spez. Kap. 8).
+                    zustand.helpers = neue_helpers
                     try:
                         zustand.assignments = client.alle_assignments(client.events())
                     except Exception:
@@ -182,4 +185,4 @@ def starte_server(zustand, port=0):
                 return self._json({"anzahl": n, "datei": str(pfad)})
             self._json({"fehler": "nicht gefunden"}, 404)
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return ThreadingHTTPServer(("127.0.0.1", port), CockpitHandler)
