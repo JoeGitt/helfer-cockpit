@@ -1,0 +1,10 @@
+[
+  {"id": 900, "status": "ok", "value": 1, "plannedValue": 1,
+   "helper": {"id": 101, "firstName": "Reto", "lastName": "Brunner", "email": "reto@example.ch"},
+   "helpAsHelper": null},
+  {"id": 901, "status": "ok", "value": 1, "plannedValue": 1,
+   "helper": {"id": 104, "firstName": "Petra", "lastName": "Vogt", "email": "petra@example.ch"},
+   "helpAsHelper": {"id": 100, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch"}},
+  {"id": 902, "status": "open", "value": 1, "plannedValue": 0,
+   "helper": null, "helpAsHelper": null}
+]
