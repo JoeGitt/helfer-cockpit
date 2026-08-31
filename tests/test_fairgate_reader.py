@@ -37,3 +37,22 @@ def test_weist_falsche_datei_ab(tmp_path):
 def test_leere_zeilen_werden_uebersprungen(tmp_path):
     pfad = _schreibe(tmp_path, KOPF, [[None] * 10])
     assert lies_fairgate(pfad) == []
+
+
+def test_garbage_datei_wird_als_falsche_datei_abgewiesen(tmp_path):
+    pfad = tmp_path / "kaputt.xlsx"
+    pfad.write_bytes(b"das ist keine Excel-Datei, nur Muell-Bytes \x00\x01\x02")
+    with pytest.raises(FalscheDatei) as e:
+        lies_fairgate(pfad)
+    assert "Aktualisierungsimport" in str(e.value)
+
+
+def test_liest_kontakte_aus_bytesio(tmp_path):
+    import io
+    pfad = _schreibe(tmp_path, KOPF, [
+        ["x", 2417, "lina@example.ch", "Lina", "Brunner", "0791112233",
+         "Aktivmitglied", "eltern@example.ch", None, "2012-04-01"],
+    ])
+    with io.BytesIO(pfad.read_bytes()) as puffer:
+        kontakte = lies_fairgate(puffer)
+    assert len(kontakte) == 1 and kontakte[0].fg == "FG-2417"

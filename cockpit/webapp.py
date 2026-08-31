@@ -1,22 +1,24 @@
 """Lokaler HTTP-Server: statisches Frontend + JSON-API. Bindet nur an 127.0.0.1."""
 import datetime
+import io
 import json
-import tempfile
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from .model import classify, build_mitglieder, status, Typ
-from .checks import run_checks
+from .checks import run_checks, Hinweis
 from .fairgate_reader import lies_fairgate, FalscheDatei
 from .abgleich import gleiche_ab
 from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsliste_html,
                       schreibe_gesamtexport_xlsx)
-from .settings import lade_regeln, speichere_regeln, Regeln, KategorieRegel
+from .settings import lade_regeln, lade_regeln_mit_fehler, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
 
 STATIC = Path(__file__).parent / "static"
+STATIC_RESOLVED = STATIC.resolve()
+SICHTEN = ("saison", "halbjahr")
 
 
 @dataclass
@@ -29,16 +31,22 @@ class Zustand:
     ausgabe_dir: Path = None
     api_client_factory: object = None
     fehler: str = ""
+    assignments_fehler: bool = False   # D6 degradiert: letzter Einsätze-Abruf ist gescheitert
 
 
 def baue_dashboard(z):
     if not z.helpers:
         return {"stand": "", "fehler": z.fehler, "kennzahlen": {}, "mitglieder": [],
                 "hinweise": [], "wer_leistet": {}}
-    regeln = lade_regeln(z.regeln_pfad)
+    regeln, regeln_fehler = lade_regeln_mit_fehler(z.regeln_pfad)
     accounts = [classify(h) for h in z.helpers]
     mitglieder = build_mitglieder(accounts)
-    hinweise = run_checks(accounts, mitglieder, z.assignments)
+    hinweise = list(run_checks(accounts, mitglieder, z.assignments))
+    if regeln_fehler:
+        hinweise.append(Hinweis("REGELN", "warnung", regeln_fehler, []))
+    if z.assignments_fehler:
+        hinweise.append(Hinweis("D6", "hinweis",
+            "Gutschrift-Prüfung nicht möglich — Einsätze konnten nicht abgerufen werden.", []))
     wer = {}
     for a in accounts:
         wer[a.typ.value] = wer.get(a.typ.value, 0) + a.num_ok + a.num_confirmed
@@ -70,6 +78,12 @@ def baue_dashboard(z):
                           "text": h.text, "betroffene": h.betroffene} for h in hinweise]}
 
 
+def _host_erlaubt(host):
+    host = (host or "").strip()
+    return (host in ("127.0.0.1", "localhost")
+            or host.startswith("127.0.0.1:") or host.startswith("localhost:"))
+
+
 def starte_server(zustand, port=0):
     class CockpitHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):      # keine Zugriffe auf stdout spammen
@@ -83,7 +97,20 @@ def starte_server(zustand, port=0):
             self.end_headers()
             self.wfile.write(body)
 
+        # DNS-Rebinding-Schutz: nur Requests mit lokalem Host-Header akzeptieren, auch
+        # wenn ein Angreifer eine fremde Seite dazu bringt, gegen 127.0.0.1 zu senden.
+        def _host_ok(self):
+            return _host_erlaubt(self.headers.get("Host"))
+
         def do_GET(self):
+            if not self._host_ok():
+                return self._json({"fehler": "Ungültiger Host-Header — Zugriff verweigert."}, 403)
+            try:
+                return self._do_GET()
+            except Exception as e:
+                return self._json({"fehler": str(e)}, 500)
+
+        def _do_GET(self):
             pfad = urlparse(self.path).path
             if pfad == "/api/stand":
                 return self._json(baue_dashboard(zustand))
@@ -94,7 +121,7 @@ def starte_server(zustand, port=0):
                 return self._json(protokoll.lese(zustand.protokoll_pfad))
             # statische Dateien
             datei = STATIC / ("index.html" if pfad == "/" else pfad.lstrip("/").removeprefix("static/"))
-            if datei.is_file() and STATIC in datei.resolve().parents:
+            if datei.is_file() and STATIC_RESOLVED in datei.resolve().parents:
                 typ = {"html": "text/html", "js": "text/javascript", "css": "text/css",
                        "png": "image/png"}.get(datei.suffix.lstrip("."), "application/octet-stream")
                 body = datei.read_bytes()
@@ -111,6 +138,14 @@ def starte_server(zustand, port=0):
             return self.rfile.read(n)
 
         def do_POST(self):
+            if not self._host_ok():
+                return self._json({"fehler": "Ungültiger Host-Header — Zugriff verweigert."}, 403)
+            try:
+                return self._do_POST()
+            except Exception as e:
+                return self._json({"fehler": str(e)}, 500)
+
+        def _do_POST(self):
             u = urlparse(self.path)
             if u.path == "/api/abruf":
                 try:
@@ -124,22 +159,24 @@ def starte_server(zustand, port=0):
                     zustand.helpers = neue_helpers
                     try:
                         zustand.assignments = client.alle_assignments(client.events())
+                        zustand.assignments_fehler = False
                     except Exception:
                         zustand.assignments = None   # D6 degradiert (Spez. 6.4)
+                        zustand.assignments_fehler = True
                     zustand.stand = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
                     zustand.fehler = ""
+                    dashboard = baue_dashboard(zustand)
                     protokoll.logge(zustand.protokoll_pfad, "api-abruf",
-                                    {"accounts": len(zustand.helpers)})
+                                    {"accounts": len(zustand.helpers),
+                                     "hinweise": dashboard["kennzahlen"]["hinweise"]})
+                    return self._json(dashboard)
                 except Exception as e:
                     zustand.fehler = str(e)
                 return self._json(baue_dashboard(zustand))
             if u.path == "/api/fairgate":
                 daten = self._body()
-                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
-                    f.write(daten)
-                    tmp = Path(f.name)
                 try:
-                    kontakte = lies_fairgate(tmp)
+                    kontakte = lies_fairgate(io.BytesIO(daten))
                     regeln = lade_regeln(zustand.regeln_pfad)
                     accounts = [classify(h) for h in (zustand.helpers or [])]
                     ergebnis = gleiche_ab(kontakte, accounts, regeln)
@@ -162,11 +199,10 @@ def starte_server(zustand, port=0):
                         "handarbeit": [vars(h) for h in ergebnis.handarbeit],
                         "klaerliste": ergebnis.klaerliste,
                         "duplikat_warnungen": ergebnis.duplikat_warnungen,
+                        "unbekannte_kategorien": ergebnis.unbekannte_kategorien,
                         "dateien": {"import": str(import_pfad), "liste": str(liste_pfad)}})
                 except (FalscheDatei, ValueError) as e:
                     return self._json({"fehler": str(e)}, 400)
-                finally:
-                    tmp.unlink(missing_ok=True)
             if u.path == "/api/regeln":
                 daten = json.loads(self._body())
                 regeln = Regeln(kategorien=[KategorieRegel(**k) for k in daten["kategorien"]],
@@ -176,6 +212,9 @@ def starte_server(zustand, port=0):
                 return self._json({"ok": True})
             if u.path == "/api/export/saeumige":
                 sicht = parse_qs(u.query).get("sicht", ["saison"])[0]
+                if sicht not in SICHTEN:
+                    return self._json({"fehler": f"Ungültige Sicht «{sicht}» — erlaubt: "
+                                       + ", ".join(SICHTEN) + "."}, 400)
                 regeln = lade_regeln(zustand.regeln_pfad)
                 accounts = [classify(h) for h in (zustand.helpers or [])]
                 mitglieder = build_mitglieder(accounts)
