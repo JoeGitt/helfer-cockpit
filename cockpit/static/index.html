@@ -1,0 +1,397 @@
+<meta charset="utf-8">
+<title>Helfer-Cockpit 2</title>
+<style>
+  :root{
+    --bg:#F4F4F2; --surface:#FFFFFF; --surface2:#ECECE9;
+    --ink:#1C1D1F; --muted:#6C6E70; --border:#E0E0DC; --border-strong:#C4C5C2;
+    --red:#D8232A; --red-ink:#B01E24; --red-soft:#FBE7E7;
+    --rail:#141517; --rail-ink:#F2F2F2; --rail-muted:#9A9DA1; --rail-line:#2A2C2F; --rail-active:#232528;
+    --ok:#2F7D4F; --ok-soft:#E4F0E8; --warn:#A8720F; --warn-soft:#F6ECD6;
+    --track:#E4E3DE;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131416; --surface:#1C1E21; --surface2:#25272B;
+      --ink:#ECEDEE; --muted:#9DA0A3; --border:#313438; --border-strong:#4A4D52;
+      --red:#F0625F; --red-ink:#F58B88; --red-soft:#3A2224;
+      --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#232528; --rail-active:#1D1F22;
+      --ok:#6FBE8E; --ok-soft:#213829; --warn:#D8A44C; --warn-soft:#3A3120;
+      --track:#2E3033;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131416; --surface:#1C1E21; --surface2:#25272B;
+    --ink:#ECEDEE; --muted:#9DA0A3; --border:#313438; --border-strong:#4A4D52;
+    --red:#F0625F; --red-ink:#F58B88; --red-soft:#3A2224;
+    --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#232528; --rail-active:#1D1F22;
+    --ok:#6FBE8E; --ok-soft:#213829; --warn:#D8A44C; --warn-soft:#3A3120;
+    --track:#2E3033;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;}
+  h1,h2,h3{font-family:Archivo,system-ui,sans-serif; margin:0; text-wrap:balance}
+  .num{font-variant-numeric:tabular-nums}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--red); outline-offset:2px}
+
+  .shell{display:flex; min-height:100vh;}
+  /* ---- Seitenleiste ---- */
+  .rail{flex:0 0 228px; background:var(--rail); color:var(--rail-ink); display:flex; flex-direction:column; padding:20px 0;}
+  .rail .brand{display:flex; align-items:center; gap:12px; padding:0 18px 18px; border-bottom:1px solid var(--rail-line);}
+  .rail .brand img{height:46px;}
+  .rail .brand .t{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:14.5px; letter-spacing:.03em; line-height:1.25;}
+  .rail .brand .s{font-size:10.5px; color:var(--rail-muted);}
+  .rail nav{display:flex; flex-direction:column; padding:12px 10px; gap:2px;}
+  .navitem{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--rail-muted); font:600 13.5px "IBM Plex Sans",sans-serif; background:none; border:none; cursor:pointer; text-align:left;}
+  .navitem:hover{color:var(--rail-ink); background:var(--rail-active);}
+  .navitem[aria-current="page"]{color:var(--rail-ink); background:var(--rail-active); box-shadow:inset 3px 0 0 var(--red);}
+  .navitem .n{margin-left:auto; font-size:11px; color:var(--rail-muted); background:var(--rail-line); border-radius:99px; padding:1px 8px;}
+  .rail .spacer{flex:1}
+  .rail .apistat{padding:12px 18px; font-size:11.5px; color:var(--rail-muted); border-top:1px solid var(--rail-line);}
+  .rail .apistat b{color:var(--rail-ink); font-weight:600;}
+  .rail .fetch{margin:10px 18px 0; background:var(--red); color:#fff; border:none; border-radius:8px; padding:8px 12px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
+  .rail .fetch:disabled{opacity:.55; cursor:default;}
+
+  /* ---- Inhalt ---- */
+  .content{flex:1; min-width:0; padding:22px 26px;}
+  section.panel{display:none} section.panel.active{display:block}
+  .pagehead{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;}
+  .pagehead h1{font-size:19px; font-weight:800;}
+  .pagehead .meta{font-size:12.5px; color:var(--muted);}
+  .pagehead .actions{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;}
+  .btn2{background:var(--surface); border:1px solid var(--border-strong); color:var(--ink); border-radius:8px; padding:7px 13px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
+  .btn2:hover{background:var(--surface2)}
+  .btn2:disabled{opacity:.55; cursor:default;}
+  .btn-red{background:var(--red); color:#fff; border:none; border-radius:8px; padding:7px 15px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
+
+  .fehlerbanner{display:flex; gap:10px; align-items:flex-start; background:var(--red-soft); color:var(--red-ink); border:1px solid var(--red); border-radius:9px; padding:10px 14px; font-size:13px; font-weight:600; margin-bottom:14px;}
+  .fehlerbanner[hidden]{display:none;}
+
+  .statgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-bottom:16px;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px; display:flex; flex-direction:column;}
+  .stat .l{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
+  .stat .v{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:22px;}
+  .stat .v .of{font-size:13px; color:var(--muted); font-weight:600;}
+  .stat.lead{border-left:3px solid var(--red);}
+
+  .chips{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;}
+  .chip{display:inline-flex; align-items:center; gap:7px; font:600 12.5px "IBM Plex Sans",sans-serif; color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:5px 13px; cursor:pointer;}
+  .chip .c{font-size:11px; background:var(--surface2); border-radius:99px; padding:0 7px;}
+  .chip[aria-pressed="true"]{color:#fff; background:var(--ink); border-color:var(--ink);}
+  .chip[aria-pressed="true"] .c{background:rgba(255,255,255,.18); color:#fff;}
+  .chip[hidden]{display:none;}
+  :root[data-theme="dark"] .chip[aria-pressed="true"], :root:not([data-theme="light"]) .chip[aria-pressed="true"]{color:var(--bg);}
+  .chips .search{margin-left:auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:7px 12px; color:var(--ink); font:inherit; width:220px;}
+  .sichttoggle{display:flex; gap:4px;}
+
+  .tablewrap{background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:auto; max-height:430px;}
+  table{border-collapse:separate; border-spacing:0; width:100%; min-width:820px; font-size:13.5px;}
+  caption{position:absolute; clip:rect(0 0 0 0);}
+  th{position:sticky; top:0; background:var(--surface2); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; z-index:1;}
+  td{padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  tr.member:hover td{background:var(--surface2)}
+  .name{font-weight:600}
+  .fg{font-size:11.5px; color:var(--muted);}
+  .acct-badge{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600; color:var(--red-ink); background:var(--red-soft); border-radius:99px; padding:1px 9px; cursor:pointer; border:none; font-family:inherit;}
+  .bar{width:90px; height:7px; border-radius:99px; background:var(--surface2); border:1px solid var(--border); position:relative; overflow:hidden; display:inline-block; vertical-align:middle;}
+  .bar i{position:absolute; top:0; bottom:0; left:0; border-radius:99px;}
+  .bar i.g{background:var(--ok)} .bar i.o{background:var(--warn)} .bar i.r{background:var(--red)}
+  .status{display:inline-block; font-size:11.5px; font-weight:600; border-radius:99px; padding:2px 9px; white-space:nowrap;}
+  .status.ok{color:var(--ok); background:var(--ok-soft);}
+  .status.warn{color:var(--warn); background:var(--warn-soft);}
+  .status.crit{color:var(--red-ink); background:var(--red-soft);}
+  tr.detail td{background:var(--surface2); padding:0;}
+  .subaccounts{padding:8px 12px 12px 40px; font-size:12.5px;}
+  .subrow{display:flex; gap:16px; align-items:baseline; padding:4px 0; flex-wrap:wrap;}
+  .subrow .who{min-width:210px;}
+  .subrow .meta{color:var(--muted); font-size:12px;}
+  .tfoot{display:flex; gap:12px; padding:9px 4px; font-size:12px; color:var(--muted);}
+
+  /* ---- Bericht ---- */
+  .hero{display:grid; grid-template-columns:270px 1fr; gap:16px; margin-bottom:16px;}
+  @media (max-width:900px){ .hero{grid-template-columns:1fr} }
+  .ringcard{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; display:flex; flex-direction:column; align-items:center; gap:8px;}
+  .ringwrap{position:relative; width:170px; height:170px;}
+  .ringwrap svg{width:100%; height:100%; transform:rotate(-90deg);}
+  .ringwrap .mid{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .ringwrap .pct{font-family:Archivo,system-ui,sans-serif; font-weight:900; font-size:37px; line-height:1;}
+  .ringwrap .lbl{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+  .ringcard .sub{font-size:12px; color:var(--muted); text-align:center;}
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-content:start;}
+  .panelcard{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:16px;}
+  .panelcard h2{font-size:15px; margin-bottom:2px;}
+  .panelcard .sub{font-size:12.5px; color:var(--muted); margin:0 0 12px;}
+  .gbars{display:flex; flex-direction:column; gap:10px;}
+  .gbar{display:grid; grid-template-columns:140px 1fr 96px; gap:12px; align-items:center; font-size:13px;}
+  .gbar .track{height:13px; border-radius:99px; background:var(--track); position:relative; overflow:hidden;}
+  .gbar .fill{position:absolute; top:0; bottom:0; left:0; border-radius:99px; background:var(--red);}
+  .gbar .fill.hi{background:var(--ok);}
+  .gbar .val{text-align:right; color:var(--muted); font-size:12px;}
+  .legend{display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--muted);}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; vertical-align:-1px; margin-right:5px;}
+  .legend .a{background:var(--ok)} .legend .b{background:var(--red)}
+  .plaintable{border-collapse:collapse; width:100%; min-width:0; font-size:13px;}
+  .plaintable th{position:static; background:none; padding:8px 10px;}
+  .plaintable td{padding:8px 10px;}
+  .tablenote{font-size:12px; color:var(--muted); margin-top:10px;}
+
+  /* ---- Abgleich ---- */
+  .steps{display:flex; flex-direction:column; gap:14px;}
+  .step{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px;}
+  .step h2{font-size:15px; display:flex; gap:10px; align-items:center; margin-bottom:8px;}
+  .stepnum{flex:none; width:22px; height:22px; border-radius:50%; background:var(--ink); color:var(--bg); font:700 12px Archivo,system-ui,sans-serif; display:flex; align-items:center; justify-content:center;}
+  .fileok{display:flex; align-items:center; gap:10px; font-size:13px; border:1px solid var(--border); border-radius:9px; padding:10px 13px; background:var(--bg); flex-wrap:wrap;}
+  .fileok .tick{color:var(--ok); font-weight:700;}
+  .fileok .swap{margin-left:auto; font-size:12px; color:var(--red-ink); background:none; border:none; cursor:pointer; text-decoration:underline; font-family:inherit;}
+  .hintline{margin:8px 0 0; font-size:12px; color:var(--muted);}
+  .resultlead{font-size:14px; margin:0 0 12px;}
+  .artifacts{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;}
+  .artifact{border:1px solid var(--border); border-radius:10px; padding:13px 15px; background:var(--bg); display:flex; flex-direction:column; gap:5px;}
+  .artifact h3{font-size:13.5px;}
+  .artifact p{margin:0; font-size:12px; color:var(--muted); flex:1;}
+  .artifact .cta{align-self:flex-start; margin-top:5px; font-size:12px; font-weight:600; color:var(--ink); background:none; border:1px solid var(--border-strong); border-radius:7px; padding:4px 11px; cursor:pointer;}
+  .artifact .path{font-size:11px; color:var(--muted); word-break:break-all;}
+  .count{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:20px;}
+
+  /* ---- Datenqualität ---- */
+  .dqlist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px;}
+  .dqlist li{display:flex; gap:10px; align-items:flex-start; font-size:13px; padding:10px 13px; border:1px solid var(--border); border-radius:9px; background:var(--surface);}
+  .sev{flex:none; margin-top:5px; width:8px; height:8px; border-radius:50%;}
+  .sev.warn{background:var(--warn)} .sev.crit{background:var(--red)} .sev.info{background:var(--muted)}
+
+  /* ---- Regeln / Protokoll ---- */
+  .ruletable td, .ruletable th{padding:9px 12px;}
+  .ruletable input[type="text"], .ruletable input[type="number"]{width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; color:var(--ink); font:inherit;}
+  .ruletable input[type="number"]{width:70px;}
+  .check{color:var(--ok); font-weight:700;}
+  .cross{color:var(--muted);}
+  .rmrow{background:none; border:1px solid var(--border-strong); border-radius:6px; color:var(--red-ink); cursor:pointer; padding:3px 8px; font:inherit;}
+  .regeln-status{font-size:12.5px; color:var(--muted); margin-top:10px;}
+  .loglist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;}
+  .loglist li{display:flex; gap:14px; padding:10px 4px; border-bottom:1px solid var(--border); font-size:13px;}
+  .loglist .d{flex:none; width:150px; color:var(--muted);}
+  .leer{font-size:13px; color:var(--muted); padding:14px 2px;}
+
+  @media print{
+    .rail,.pagehead .actions,.chips,.tfoot,.fehlerbanner,.sichttoggle{display:none !important}
+    body{background:#fff; color:#000}
+    .panelcard,.ringcard,.stat,.tablewrap{border-color:#bbb; break-inside:avoid;}
+    .content{padding:0}
+  }
+  @media (max-width:760px){ .rail{display:none} }
+  @media (prefers-reduced-motion: no-preference){
+    .panel.active{animation:fade .18s ease}
+    @keyframes fade{from{opacity:.4}to{opacity:1}}
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <img alt="Pfadi Winterthur Handball" src="/static/logo.png">
+      <div><div class="t">HELFER-COCKPIT</div><div class="s">Pfadi Winterthur Handball</div></div>
+    </div>
+    <nav>
+      <button class="navitem" aria-current="page" data-panel="p-kontingent">▦ Kontingent <span class="n num" id="nav-kontingent">–</span></button>
+      <button class="navitem" data-panel="p-bericht">📈 Bericht</button>
+      <button class="navitem" data-panel="p-abgleich">⇄ Quartals-Abgleich <span class="n num" id="nav-abgleich" hidden>0</span></button>
+      <button class="navitem" data-panel="p-dq">⚑ Datenqualität <span class="n num" id="nav-dq">–</span></button>
+      <button class="navitem" data-panel="p-regeln">⚙ Regeln</button>
+      <button class="navitem" data-panel="p-log">≡ Protokoll</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="apistat" id="stand-anzeige">Helfertool-API<br><b>Noch keine Daten geladen</b></div>
+    <button class="fetch" id="btn-abruf">↻ Daten neu abrufen</button>
+  </aside>
+
+  <div class="content">
+    <div class="fehlerbanner" id="fehler-banner" role="alert" hidden></div>
+    <div class="fehlerbanner" id="hinweis-banner" role="status" hidden style="background:var(--ok-soft); color:var(--ok); border-color:var(--ok);"></div>
+
+    <!-- ============ KONTINGENT ============ -->
+    <section class="panel active" id="p-kontingent">
+      <div class="pagehead">
+        <h1>Kontingent-Erfüllung</h1>
+        <span class="meta num" id="kontingent-meta">Sicht: Saison-Soll</span>
+        <span class="actions sichttoggle">
+          <button class="chip" id="sicht-saison" aria-pressed="true">Saison-Soll</button>
+          <button class="chip" id="sicht-halbjahr" aria-pressed="false">Halbjahresziel</button>
+        </span>
+        <span class="actions">
+          <button class="btn2" id="btn-saeumige-csv">Säumigen-CSV</button>
+        </span>
+      </div>
+
+      <div class="statgrid">
+        <div class="stat lead"><span class="l">Soll erfüllt</span><span class="v num" id="kpi-erfuellt">– / –</span></div>
+        <div class="stat"><span class="l">Halbjahresziel</span><span class="v num" id="kpi-halbjahr">– / –</span></div>
+        <div class="stat"><span class="l">Ohne Einsatz</span><span class="v num" id="kpi-ohne-einsatz">–</span></div>
+        <div class="stat"><span class="l">Ist / Soll gesamt</span><span class="v num" id="kpi-ist-soll">– / –</span></div>
+        <div class="stat"><span class="l">Zweitaccounts</span><span class="v num" id="kpi-zweitaccounts">–</span></div>
+      </div>
+
+      <div class="chips">
+        <button class="chip" data-filter="alle" aria-pressed="true">Alle <span class="c num" id="chip-alle">0</span></button>
+        <button class="chip" data-filter="erfuellt" aria-pressed="false">Erfüllt <span class="c num" id="chip-erfuellt">0</span></button>
+        <button class="chip" data-filter="auf_kurs" aria-pressed="false" id="chip-auf-kurs-btn">Auf Kurs <span class="c num" id="chip-auf-kurs">0</span></button>
+        <button class="chip" data-filter="saeumig" aria-pressed="false">Säumig <span class="c num" id="chip-saeumig">0</span></button>
+        <button class="chip" data-filter="zweitaccount" aria-pressed="false">Mit Zweitaccount <span class="c num" id="chip-zweitaccount">0</span></button>
+        <input class="search" type="search" id="suche-mitglieder" placeholder="Name oder FG-Nummer …">
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <caption>Kontingent-Erfüllung pro Mitglied</caption>
+          <thead>
+            <tr>
+              <th>Mitglied</th><th>Gruppen</th><th>Accounts</th>
+              <th class="num" id="th-soll">Soll</th><th class="num">Ist</th><th>Fortschritt</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tab-mitglieder"></tbody>
+        </table>
+      </div>
+      <div class="tfoot num" id="tab-mitglieder-status">Lädt …</div>
+    </section>
+
+    <!-- ============ BERICHT ============ -->
+    <section class="panel" id="p-bericht">
+      <div class="pagehead">
+        <h1>Saisonbericht</h1>
+        <span class="meta num" id="bericht-meta">Stand –</span>
+        <span class="actions">
+          <button class="btn-red" id="btn-print">🖨 Bericht drucken (Vorstands-Protokoll)</button>
+          <button class="btn2" id="btn-saeumige-csv-bericht">Säumigen-CSV</button>
+        </span>
+      </div>
+
+      <div class="hero">
+        <div class="ringcard">
+          <div class="ringwrap">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--track)" stroke-width="11"/>
+              <circle id="ring-progress" cx="50" cy="50" r="42" fill="none" stroke="var(--red)" stroke-width="11"
+                stroke-linecap="round" stroke-dasharray="0 263.9" />
+            </svg>
+            <div class="mid"><span class="pct num" id="ring-pct">0&nbsp;%</span><span class="lbl">Ist / Soll</span></div>
+          </div>
+          <div class="sub num" id="ring-sub">Noch keine Daten geladen.</div>
+        </div>
+        <div class="facts">
+          <div class="stat"><span class="l">Soll voll erfüllt</span><span class="v num" id="fact-erfuellt">– / –</span></div>
+          <div class="stat"><span class="l">Halbjahresziel erreicht</span><span class="v num" id="fact-halbjahr">– / –</span></div>
+          <div class="stat"><span class="l">Noch ohne Einsatz</span><span class="v num" id="fact-ohne-einsatz">–</span></div>
+          <div class="stat"><span class="l">Zweitaccounts</span><span class="v num" id="fact-zweitaccounts">–</span></div>
+          <div class="stat"><span class="l">Soll-Konflikte</span><span class="v num" id="fact-soll-konflikte">–</span></div>
+          <div class="stat"><span class="l">Datenqualität</span><span class="v num" id="fact-dq">–</span></div>
+        </div>
+      </div>
+
+      <div class="panelcard">
+        <h2>Erfüllung nach Gruppe</h2>
+        <p class="sub">Anteil der Mitglieder je Portal-Gruppe, die das Halbjahresziel erreicht haben (mind. 1 Einsatz).</p>
+        <div class="gbars num" id="gruppen-bars"></div>
+        <div class="legend"><span><i class="a"></i>über Vereinsschnitt</span><span><i class="b"></i>unter Vereinsschnitt</span></div>
+      </div>
+
+      <div class="panelcard">
+        <h2>Wer leistet die Einsätze?</h2>
+        <p class="sub">Geleistete und fest übernommene Einsätze nach Typ des ausführenden Accounts.</p>
+        <div class="gbars num" id="wer-leistet-bars"></div>
+        <p class="tablenote" id="wer-leistet-hinweis"></p>
+      </div>
+
+      <div class="panelcard">
+        <h2>Säumigen-Liste <span class="num" style="color:var(--muted); font-size:12.5px; font-weight:600" id="saeumige-titel">· Auszug</span></h2>
+        <p class="sub">Einsätze verknüpfter Zweitaccounts sind bereits eingerechnet.</p>
+        <table class="plaintable">
+          <caption>Mitglieder ohne Einsatz</caption>
+          <thead><tr><th>Mitglied</th><th>Gruppen</th><th class="num">Soll</th><th class="num">Ist</th><th>Accounts</th></tr></thead>
+          <tbody id="saeumige-auszug"></tbody>
+        </table>
+        <p class="tablenote">Vollständige Liste über «Säumigen-CSV» — direkt als Empfängerliste für die Erinnerungsmail verwendbar.</p>
+      </div>
+    </section>
+
+    <!-- ============ ABGLEICH ============ -->
+    <section class="panel" id="p-abgleich">
+      <div class="pagehead">
+        <h1>Quartals-Abgleich</h1>
+        <span class="meta">Fairgate → Portal · einmal pro Quartal, rund zehn Minuten</span>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <h2><span class="stepnum">1</span> Fairgate-Export laden</h2>
+          <div class="fileok" id="fg-datei-status">
+            <span>Noch keine Datei gewählt.</span>
+            <button class="swap" id="fg-datei-waehlen">Datei wählen</button>
+          </div>
+          <input type="file" id="fg-datei-input" accept=".xlsx" hidden>
+          <p class="hintline">Kontaktverwaltung → Aktive Kontakte → Exportieren („für Aktualisierungsimport optimieren“)</p>
+        </div>
+        <div class="step">
+          <h2><span class="stepnum">2</span> Helfertool-Daten</h2>
+          <div class="fileok" id="abgleich-helfer-status">Noch keine Daten geladen.</div>
+        </div>
+        <div class="step">
+          <h2><span class="stepnum">3</span> Ergebnis</h2>
+          <div id="abgleich-ergebnis">
+            <p class="resultlead">Noch kein Abgleich in dieser Sitzung durchgeführt.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DATENQUALITÄT ============ -->
+    <section class="panel" id="p-dq">
+      <div class="pagehead">
+        <h1>Datenqualität</h1>
+        <span class="meta" id="dq-meta">Wird bei jedem API-Abruf geprüft</span>
+      </div>
+      <ul class="dqlist" id="dq-liste"></ul>
+    </section>
+
+    <!-- ============ REGELN ============ -->
+    <section class="panel" id="p-regeln">
+      <div class="pagehead">
+        <h1>Regeln</h1>
+        <span class="meta">Einmal einstellen, dann vergessen · bleiben lokal gespeichert</span>
+      </div>
+      <form id="regeln-formular">
+        <div class="panelcard">
+          <h2>Mitglieder-Kategorien</h2>
+          <p class="sub">Welche Fairgate-Kategorien helferpflichtig sind, mit Zielwert und Standardgruppe für Neueintritte.</p>
+          <table class="plaintable ruletable">
+            <caption>Kategorie-Regeln</caption>
+            <thead><tr><th>Fairgate-Kategorie</th><th>Pflichtig</th><th class="num">Zielwert</th><th>Portal-Gruppe</th><th></th></tr></thead>
+            <tbody id="regeln-kategorien"></tbody>
+          </table>
+          <p style="margin-top:10px;"><button type="button" class="btn2" id="regeln-kategorie-hinzu">+ Kategorie hinzufügen</button></p>
+        </div>
+        <div class="panelcard">
+          <h2>Weitere Regeln</h2>
+          <table class="plaintable ruletable">
+            <caption>Weitere Einstellungen</caption>
+            <tbody>
+              <tr><td>Altersgrenze für eigene E-Mail (darunter Eltern-Adresse)</td><td class="num"><input type="number" min="0" id="regeln-altersgrenze"></td></tr>
+              <tr><td>Halbjahresziel (Zwischenziel bis Saisonhälfte)</td><td class="num"><input type="number" min="0" id="regeln-halbjahresziel"></td></tr>
+              <tr><td>Zweitaccount-Erkennung</td><td><b>FG-Nummer in Bemerkung, Gruppe ≠ Mitglied</b></td></tr>
+              <tr><td>Unbekannte mit Einsatz oder Anmeldung</td><td><b>zu Freiwilligen umteilen (Liste in Datenqualität)</b></td></tr>
+            </tbody>
+          </table>
+          <p><button type="submit" class="btn-red">Regeln speichern</button> <span class="regeln-status" id="regeln-status"></span></p>
+        </div>
+      </form>
+    </section>
+
+    <!-- ============ PROTOKOLL ============ -->
+    <section class="panel" id="p-log">
+      <div class="pagehead">
+        <h1>Protokoll</h1>
+        <span class="meta">Was das Cockpit wann gemacht hat · hilft beim Quartals-Rhythmus</span>
+      </div>
+      <ul class="loglist num" id="protokoll-liste"></ul>
+    </section>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>

@@ -46,6 +46,11 @@ def test_api_stand_http(server):
         d = json.loads(r.read())
     assert d["kennzahlen"]["mitglieder"] == 3
 
+def test_index_wird_ausgeliefert(server):
+    with urllib.request.urlopen(server + "/") as r:
+        html = r.read().decode("utf-8")
+    assert "HELFER-COCKPIT" in html and "app.js" in html
+
 def test_bindet_nur_lokal(tmp_path):
     srv = starte_server(_zustand(tmp_path), port=0)
     assert srv.server_address[0] == "127.0.0.1"
