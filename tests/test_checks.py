@@ -31,6 +31,33 @@ def test_d5_unbekannte_mit_einsatz():
     d5 = [h for h in _setup() if h.code == "D5"]
     assert len(d5) == 1 and "Dario Ackermann" in d5[0].betroffene
 
+def test_d5_unbekannte_mit_nur_nok():
+    # Synthetischer Test: Unbekannte mit EINZIGEM Signal num_nok > 0
+    unbekannte_nok = classify({
+        "id": 999,
+        "firstName": "Test",
+        "lastName": "NOK",
+        "email": "test@example.ch",
+        "phone": None,
+        "additionalEmail1": None,
+        "additionalEmail2": None,
+        "adminRemarks": "",
+        "birthDate": None,
+        "groups": [{"id": 4, "name": "Unbekannte"}],
+        "stateCache": {
+            "okAssignmentsNum": 0,
+            "nokAssignmentsNum": 1,
+            "confirmedAssignmentsNum": 0,
+            "reservedAssignmentsNum": 0,
+            "unconfirmedAssignmentsNum": 0,
+            "requestedValue": 0,
+            "plannedValue": 0
+        }
+    })
+    hinweise = run_checks([unbekannte_nok], [], None)
+    d5 = [h for h in hinweise if h.code == "D5"]
+    assert len(d5) == 1 and "Test NOK" in d5[0].betroffene
+
 def test_d6_vergessene_gutschrift():
     d6 = [h for h in _setup() if h.code == "D6"]
     assert len(d6) == 1 and "Reto Brunner" in d6[0].betroffene

@@ -49,7 +49,7 @@ def run_checks(accounts, mitglieder, assignments=None):
 
     # D5: Unbekannte mit Einsätzen oder Anmeldungen
     d5 = [a for a in accounts if a.typ == Typ.UNBEKANNT and (
-        a.ist_wert > 0 or a.num_ok or a.num_confirmed or a.num_reserved or a.num_unconfirmed)]
+        a.ist_wert > 0 or a.num_ok or a.num_nok or a.num_confirmed or a.num_reserved or a.num_unconfirmed)]
     if d5:
         hinweise.append(Hinweis("D5", "warnung",
             "Unbekannte mit Einsätzen oder Anmeldungen — Vereinsregel: im Portal zur Gruppe "
