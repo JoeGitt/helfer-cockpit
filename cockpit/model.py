@@ -10,7 +10,7 @@ import re
 _FG_MUSTER = re.compile(r"fg[\s\-–—_]*([0-9]{1,8})", re.IGNORECASE)
 
 
-def normalize_fg(text):
+def normalize_fg(text: str | None) -> tuple[str | None, bool]:
     if not text:
         return (None, False)
     m = _FG_MUSTER.search(text)
