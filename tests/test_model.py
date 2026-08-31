@@ -49,3 +49,34 @@ def test_classify_unklassifiziert():
 def test_classify_gruppen_als_namen():
     a = classify(_helpers()[2])  # id 102
     assert a.gruppen == ["Mitglied", "Foodbox"]
+
+
+from cockpit.model import build_mitglieder, status, Mitglied
+
+def _mitglieder():
+    return build_mitglieder([classify(h) for h in _helpers()])
+
+def test_aggregation_ueber_fg():
+    m = {x.fg: x for x in _mitglieder()}
+    assert set(m) == {"FG-2417", "FG-1083", "FG-3105"}   # 108 ohne FG, 106/4812 ohne Mitglied
+    assert m["FG-2417"].ist == 2.0        # 0 (Mitglied) + 2 (Zweitaccount 101) + 0 (109)
+    assert m["FG-2417"].soll == 2.0       # nur vom Mitglieds-Account
+    assert len(m["FG-2417"].accounts) == 3
+    assert m["FG-1083"].ist == 1.0 and m["FG-1083"].soll == 2.0  # Zweitaccount-Zielwert 2 zählt NICHT
+
+def test_soll_konflikt_bei_doppeltem_mitgliedsaccount():
+    accounts = [classify(h) for h in _helpers()]
+    doppel = classify(_helpers()[0])      # zweiter Mitglieds-Account FG-2417
+    doppel.id = 999
+    doppel.zielwert = 4.0
+    ms = {x.fg: x for x in build_mitglieder(accounts + [doppel])}
+    assert ms["FG-2417"].soll == 4.0      # max()
+    assert ms["FG-2417"].soll_konflikt is True
+
+def test_status_saison_und_halbjahr():
+    m = {x.fg: x for x in _mitglieder()}
+    assert status(m["FG-2417"], "saison", 1) == "erfuellt"
+    assert status(m["FG-1083"], "saison", 1) == "auf_kurs"
+    assert status(m["FG-3105"], "saison", 1) == "saeumig"
+    assert status(m["FG-1083"], "halbjahr", 1) == "erfuellt"
+    assert status(m["FG-3105"], "halbjahr", 1) == "saeumig"

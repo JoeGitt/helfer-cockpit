@@ -117,3 +117,61 @@ def classify(helper):
         zusatz_email1=helper.get("additionalEmail1") or "",
         zusatz_email2=helper.get("additionalEmail2") or "",
     )
+
+
+@dataclass
+class Mitglied:
+    """Ein Mitglied mit aggregierten Daten über FG-Nummer."""
+    fg: str
+    accounts: list
+    soll: float
+    ist: float
+    soll_konflikt: bool = False
+
+    @property
+    def mitglieds_account(self):
+        """Gibt den ersten Account mit Typ MITGLIED zurück, oder None."""
+        for a in self.accounts:
+            if a.typ == Typ.MITGLIED:
+                return a
+        return None
+
+
+def build_mitglieder(accounts):
+    """Aggregiert Accounts nach FG-Nummer zu Mitglieder-Objekten.
+
+    Ist = Summe der ist_wert-Felder aller Accounts derselben FG-Nummer.
+    Soll = max(zielwert) der Mitglieds-Accounts der FG.
+    Bei mehreren Mitglieds-Accounts soll_konflikt=True setzen.
+    """
+    nach_fg = {}
+    for a in accounts:
+        if a.fg:
+            nach_fg.setdefault(a.fg, []).append(a)
+    mitglieder = []
+    for fg, gruppe in sorted(nach_fg.items()):
+        haupt = [a for a in gruppe if a.typ == Typ.MITGLIED]
+        if not haupt:
+            continue  # FG ohne Mitglied → Check D1, kein Dashboard-Eintrag
+        soll = max(a.zielwert for a in haupt)
+        ist = sum(a.ist_wert for a in gruppe)
+        mitglieder.append(Mitglied(fg=fg, accounts=gruppe, soll=soll, ist=ist,
+                                   soll_konflikt=len(haupt) > 1))
+    return mitglieder
+
+
+def status(m, sicht, halbjahresziel):
+    """Bestimmt den Status eines Mitglieds.
+
+    sicht: "saison" oder "halbjahr"
+    Rückgabe: "erfuellt" | "auf_kurs" | "saeumig"
+    (Halbjahr-Sicht kennt kein "auf_kurs")
+    """
+    ziel = m.soll if sicht == "saison" else float(halbjahresziel)
+    if m.ist >= ziel and ziel > 0:
+        return "erfuellt"
+    if sicht == "saison" and 0 < m.ist < ziel:
+        return "auf_kurs"
+    if m.ist >= ziel:            # ziel 0 (z.B. Soll 0) gilt als erfüllt
+        return "erfuellt"
+    return "saeumig"
