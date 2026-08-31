@@ -61,6 +61,7 @@ def baue_dashboard(z):
         "soll_summe": sum(m["soll"] for m in m_json),
         "zweitaccounts": sum(1 for a in accounts if a.typ == Typ.ZWEITACCOUNT),
         "hinweise": len(hinweise),
+        "nok_summe": sum(a.num_nok for a in accounts),
     }
     return {"stand": z.stand, "fehler": z.fehler, "kennzahlen": kennzahlen,
             "mitglieder": m_json, "wer_leistet": wer,

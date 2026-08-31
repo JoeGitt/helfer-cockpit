@@ -44,3 +44,11 @@ def test_handarbeitsliste_html():
     assert "Weg Gezogen" in html and "checkbox" in html
     assert "zuerst" in html.lower()               # Reihenfolge-Hinweis
     assert "Fall X" in html
+
+
+def test_handarbeitsliste_html_zeigt_feld_leerungen():
+    e = AbgleichErgebnis(handarbeit=[HandarbeitsFall("leerung", "Lina Brunner", "FG-1",
+                                                      "Telefon in Fairgate geleert")],
+                         zusammenfassung="Alles synchron bei 1 geprüften Mitgliedern.")
+    html = handarbeitsliste_html(e)
+    assert "Felder leeren" in html and "Lina Brunner" in html

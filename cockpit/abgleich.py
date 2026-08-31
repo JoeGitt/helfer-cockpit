@@ -105,6 +105,13 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                     "schluessel", konto.anzeigename, k.fg,
                     f"E-Mail in Fairgate neu: {mail} (Portal: {konto.email}) — zuerst im "
                     "Portal nachführen, sonst legt der Import ein Duplikat an."))
+            # Feld-Leerung: Fairgate hat das Feld geleert, Portal noch nicht — leere
+            # Zellen überschreiben im Import nichts, also nur von Hand (Spez. 6.3).
+            if not k.telefon and konto.telefon:
+                e.handarbeit.append(HandarbeitsFall(
+                    "leerung", konto.anzeigename, k.fg,
+                    f"Telefon in Fairgate geleert (Portal: {konto.telefon}) — Feld im Portal "
+                    "von Hand leeren, der Import kann das nicht."))
             # Wert-Korrekturen (Update-Import, Tripel aus dem Portal, Gruppen-Spalte leer!)
             aenderungen = {}
             if konto.zielwert != regel.zielwert:

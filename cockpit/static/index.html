@@ -218,6 +218,7 @@
         </span>
         <span class="actions">
           <button class="btn2" id="btn-saeumige-csv">Säumigen-CSV</button>
+          <button class="btn2" id="btn-print-kontingent">🖨 Drucken</button>
         </span>
       </div>
 
@@ -282,6 +283,7 @@
           <div class="stat"><span class="l">Noch ohne Einsatz</span><span class="v num" id="fact-ohne-einsatz">–</span></div>
           <div class="stat"><span class="l">Zweitaccounts</span><span class="v num" id="fact-zweitaccounts">–</span></div>
           <div class="stat"><span class="l">Soll-Konflikte</span><span class="v num" id="fact-soll-konflikte">–</span></div>
+          <div class="stat"><span class="l">NOK-Einsätze</span><span class="v num" id="fact-nok">–</span></div>
           <div class="stat"><span class="l">Datenqualität</span><span class="v num" id="fact-dq">–</span></div>
         </div>
       </div>
@@ -389,6 +391,10 @@
         <h1>Protokoll</h1>
         <span class="meta">Was das Cockpit wann gemacht hat · hilft beim Quartals-Rhythmus</span>
       </div>
+      <p class="hintline"><b>Zum Saisonende:</b> zuerst alle Reports/Exporte ziehen, erst danach im
+        Portal die alten Events zurücksetzen — sonst zählen Vorjahres-Einsätze in <code>plannedValue</code>
+        weiter und das Dashboard zeigt zu hohe Ist-Werte. Das Cockpit kann diese Reihenfolge nur
+        anmahnen, nicht erzwingen.</p>
       <ul class="loglist num" id="protokoll-liste"></ul>
     </section>
   </div>

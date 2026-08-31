@@ -26,6 +26,7 @@ def test_dashboard_json(tmp_path):
     assert len(fg2417["accounts"]) == 3
     assert d["wer_leistet"]["zweitaccount"] == 2      # num_ok von 101
     assert any(h["code"] == "D6" for h in d["hinweise"])
+    assert d["kennzahlen"]["nok_summe"] == 1           # Bericht-Kachel NOK (Spez. 6.2)
 
 def test_dashboard_ohne_abruf(tmp_path):
     z = _zustand(tmp_path)

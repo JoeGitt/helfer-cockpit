@@ -47,6 +47,7 @@ def handarbeitsliste_html(e):
         return ('<li><label><input type="checkbox"> ' + html_mod.escape(text) + "</label></li>")
     schluessel = [h for h in e.handarbeit if h.art == "schluessel"]
     austritte = [h for h in e.handarbeit if h.art == "austritt"]
+    leerungen = [h for h in e.handarbeit if h.art == "leerung"]
     teile = ["<meta charset='utf-8'><title>Handarbeits-Liste</title>",
              "<style>body{font:15px/1.6 sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}"
              "li{margin:.4rem 0}@media print{input{-webkit-print-color-adjust:exact}}</style>",
@@ -62,6 +63,10 @@ def handarbeitsliste_html(e):
         teile.append("<h2>2 · Austritte deaktivieren</h2><ul>")
         teile += [punkt(f"{h.name} ({h.fg}): {h.detail}") for h in austritte]
         teile.append("</ul>")
+    if leerungen:
+        teile.append("<h2>3 · Felder leeren</h2><ul>")
+        teile += [punkt(f"{h.name} ({h.fg}): {h.detail}") for h in leerungen]
+        teile.append("</ul>")
     if e.duplikat_warnungen:
         teile.append("<h2>Duplikat-Warnungen (nicht importiert)</h2><ul>")
         teile += [punkt(t) for t in e.duplikat_warnungen]
@@ -70,6 +75,6 @@ def handarbeitsliste_html(e):
         teile.append("<h2>Klärliste (in Fairgate nachtragen)</h2><ul>")
         teile += [punkt(t) for t in e.klaerliste]
         teile.append("</ul>")
-    if not (schluessel or austritte or e.duplikat_warnungen or e.klaerliste):
+    if not (schluessel or austritte or leerungen or e.duplikat_warnungen or e.klaerliste):
         teile.append("<p>Nichts zu tun — alles synchron. 🎉</p>")
     return "\n".join(teile)

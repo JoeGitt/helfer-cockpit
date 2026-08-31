@@ -59,6 +59,17 @@ def test_zielwert_korrektur_fuer_zweitaccount():
     korr = [z for z in e.korrekturen if z.vorname == "Rita"]
     assert len(korr) == 1 and korr[0].zielwert == "0" and korr[0].gruppe == ""
 
+def test_feld_leerung_wenn_fairgate_telefon_geleert():
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "l@example.ch",
+                      "phone": "079 111 22 33", "adminRemarks": "FG-1",
+                      "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 2.0, "plannedValue": 0}})
+    k = _kontakt(1, "Lina", "Brunner", mail="l@example.ch", geb="2000-01-01")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    leerungen = [h for h in e.handarbeit if h.art == "leerung"]
+    assert len(leerungen) == 1 and "Telefon" in leerungen[0].detail
+
+
 def test_sicherheitsstopp_ohne_fg_nummern():
     accounts = [_acc(i, f"A{i}", "B", f"{i}@example.ch", None) for i in range(10)]
     with pytest.raises(ValueError):

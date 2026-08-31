@@ -316,6 +316,7 @@ function renderBericht(d) {
   document.getElementById("fact-zweitaccounts").textContent = leer ? "–" : fmtNum(k.zweitaccounts);
   document.getElementById("fact-soll-konflikte").textContent =
     leer ? "–" : fmtNum(mitgliederAktuell.filter((m) => m.soll_konflikt).length);
+  document.getElementById("fact-nok").textContent = leer ? "–" : fmtNum(k.nok_summe);
   document.getElementById("fact-dq").textContent = leer ? "–" : fmtNum(k.hinweise);
 
   renderGruppenBars(leer ? 0 : (k.mitglieder ? (k.halbjahr_erreicht / k.mitglieder) * 100 : 0));
@@ -637,6 +638,7 @@ document.getElementById("tab-mitglieder").addEventListener("click", (e) => {
 
 document.getElementById("btn-abruf").addEventListener("click", abrufen);
 document.getElementById("btn-print").addEventListener("click", () => window.print());
+document.getElementById("btn-print-kontingent").addEventListener("click", () => window.print());
 document.getElementById("btn-saeumige-csv").addEventListener("click", saeumigenCsv);
 document.getElementById("btn-saeumige-csv-bericht").addEventListener("click", saeumigenCsv);
 
