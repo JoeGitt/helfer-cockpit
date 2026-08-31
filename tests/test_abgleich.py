@@ -46,8 +46,9 @@ def test_schluessel_aenderung_bei_neuer_mail():
 
 def test_duplikat_waechter_case_insensitiv():
     konto = _acc(1, "Lina", "Brunner", "lina@example.ch", None)  # Portal ohne FG
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
     k = _kontakt(9, "lina", "brunner", mail="lina@example.ch", geb="2000-01-01")
-    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
     assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1
 
 def test_zielwert_korrektur_fuer_zweitaccount():

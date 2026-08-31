@@ -53,10 +53,6 @@ def _ziel_email(kontakt, regeln, heute):
     return kontakt.email or kontakt.eltern_email
 
 
-def _schluessel(vn, nn, mail):
-    return (vn, nn, mail)                       # case-SENSITIV (Portal-Match)
-
-
 def _lax(vn, nn, mail):
     return (vn.strip().lower(), nn.strip().lower(), mail.strip().lower())
 
@@ -69,7 +65,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
     # Sicherheitsstopp (Spez. 6.3): Grossteil ohne FG → irreführende Ergebnisse vermeiden
     if portal_mitglieder:
         ohne_fg = sum(1 for a in portal_mitglieder if not a.fg)
-        if ohne_fg >= 2 and ohne_fg / len(portal_mitglieder) > 0.5:
+        if ohne_fg / len(portal_mitglieder) > 0.5:
             raise ValueError(
                 "Bei %d von %d Portal-Mitgliedern fehlt die FG-Nummer — Abgleich gestoppt, "
                 "sonst wären die Ergebnisse irreführend. Zuerst FG-Nummern nachrüsten."
@@ -139,7 +135,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
     if e.neueintritte: teile.append(f"{len(e.neueintritte)} Neueintritte")
     austritte = [h for h in e.handarbeit if h.art == "austritt"]
     if austritte: teile.append(f"{len(austritte)} Austritte")
-    if e.korrekturen: teile.append(f"{len(e.korrekturen)} Korrektionen")
+    if e.korrekturen: teile.append(f"{len(e.korrekturen)} Korrekturen")
     e.zusammenfassung = ((", ".join(teile) if teile else "Alles synchron")
                          + f" bei {e.geprueft} geprüften Mitgliedern.")
     return e
