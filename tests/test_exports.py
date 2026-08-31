@@ -2,7 +2,8 @@ import csv
 import openpyxl
 from cockpit.abgleich import ImportZeile, AbgleichErgebnis, HandarbeitsFall
 from cockpit.exports import (IMPORT_SPALTEN, schreibe_import_xlsx,
-                             schreibe_saeumigen_csv, handarbeitsliste_html)
+                             schreibe_saeumigen_csv, handarbeitsliste_html,
+                             schreibe_gesamtexport_xlsx)
 from cockpit.model import Mitglied, Account, Typ
 
 
@@ -44,6 +45,41 @@ def test_handarbeitsliste_html():
     assert "Weg Gezogen" in html and "checkbox" in html
     assert "zuerst" in html.lower()               # Reihenfolge-Hinweis
     assert "Fall X" in html
+
+
+def _zweit_acc(vn, nn, mail, fg):
+    return Account(id=2, vorname=vn, nachname=nn, email=mail, telefon="", geburtsdatum="",
+                   bemerkung=fg, gruppen=["Freiwillige"], fg=fg, fg_nonstandard=False,
+                   typ=Typ.ZWEITACCOUNT, zielwert=0, ist_wert=1, num_ok=1, num_nok=0,
+                   num_confirmed=0, num_reserved=0, num_unconfirmed=0)
+
+
+def test_gesamtexport_xlsx(tmp_path):
+    haupt = _acc("Lina", "Brunner", "l@example.ch")
+    zweit = _zweit_acc("Rita", "Gerber", "r@example.ch", "FG-1")
+    m = Mitglied(fg="FG-1", accounts=[haupt, zweit], soll=2, ist=1)
+    pfad = tmp_path / "gesamt.xlsx"
+    n = schreibe_gesamtexport_xlsx([m], 1, pfad)
+    assert n == 1
+
+    wb = openpyxl.load_workbook(pfad)
+    assert wb.sheetnames == ["Mitglieder", "Accounts"]
+
+    ws_m = wb["Mitglieder"]
+    assert [c.value for c in ws_m[1]] == [
+        "FG-Nummer", "Name", "Gruppen", "Soll", "Ist",
+        "Status Saison", "Status Halbjahr", "Anzahl Accounts"]
+    zeile = [c.value for c in ws_m[2]]
+    assert zeile[0] == "FG-1" and zeile[1] == "Lina Brunner" and zeile[2] == "Mitglied"
+    assert zeile[3] == 2 and zeile[4] == 1
+    assert zeile[5] == "auf_kurs" and zeile[6] == "erfuellt" and zeile[7] == 2
+
+    ws_a = wb["Accounts"]
+    assert [c.value for c in ws_a[1]] == [
+        "FG-Nummer", "Name", "Typ", "Zielwert", "Ist-Wert", "Bemerkung"]
+    rows = [[c.value for c in row] for row in ws_a.iter_rows(min_row=2)]
+    assert ["FG-1", "Lina Brunner", "mitglied", 2, 0, None] in rows
+    assert ["FG-1", "Rita Gerber", "zweitaccount", 0, 1, "FG-1"] in rows
 
 
 def test_handarbeitsliste_html_zeigt_feld_leerungen():

@@ -87,6 +87,23 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                 e.klaerliste.append(f"{k.vorname} {k.nachname} ({k.fg}): keine erreichbare "
                                     "E-Mail (weder eigene noch Haushalt) — in Fairgate nachtragen.")
                 continue
+            # FG-Nachtrag (Spez. 6.3/D4, konservativ): exakter, case-sensitiver
+            # Tripel-Treffer gegen einen Portal-Account ohne FG-Nummer. Nur bei leerer
+            # Bemerkung automatisch nachtragen — sonst würde der Import sie überschreiben.
+            fg_nachtrag = next((a for a in accounts if not a.fg
+                                and a.vorname == k.vorname and a.nachname == k.nachname
+                                and mail in ({a.email, a.zusatz_email1, a.zusatz_email2} - {""})),
+                               None)
+            if fg_nachtrag is not None:
+                if not fg_nachtrag.bemerkung:
+                    e.korrekturen.append(ImportZeile(
+                        vorname=fg_nachtrag.vorname, nachname=fg_nachtrag.nachname,
+                        email=fg_nachtrag.email, zielwert=str(regel.zielwert), bemerkungen=k.fg))
+                else:
+                    e.klaerliste.append(
+                        f"{k.vorname} {k.nachname} ({k.fg}): FG-Nachtrag von Hand — "
+                        "Bemerkungsfeld ist belegt, der Import würde es überschreiben.")
+                continue
             if _lax(k.vorname, k.nachname, mail) in portal_lax:
                 e.duplikat_warnungen.append(
                     f"{k.vorname} {k.nachname} ({k.fg}): existiert im Portal in abweichender "

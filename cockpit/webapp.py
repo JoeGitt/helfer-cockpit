@@ -11,7 +11,8 @@ from .model import classify, build_mitglieder, status, Typ
 from .checks import run_checks
 from .fairgate_reader import lies_fairgate, FalscheDatei
 from .abgleich import gleiche_ab
-from .exports import schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsliste_html
+from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsliste_html,
+                      schreibe_gesamtexport_xlsx)
 from .settings import lade_regeln, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
 
@@ -183,6 +184,16 @@ def starte_server(zustand, port=0):
                 n = schreibe_saeumigen_csv(mitglieder, sicht, regeln.halbjahresziel, pfad)
                 protokoll.logge(zustand.protokoll_pfad, "saeumigen-csv",
                                 {"sicht": sicht, "anzahl": n, "dateien": [pfad.name]})
+                return self._json({"anzahl": n, "datei": str(pfad)})
+            if u.path == "/api/export/gesamt":
+                regeln = lade_regeln(zustand.regeln_pfad)
+                accounts = [classify(h) for h in (zustand.helpers or [])]
+                mitglieder = build_mitglieder(accounts)
+                zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
+                pfad = zustand.ausgabe_dir / f"gesamtexport-{datetime.date.today().isoformat()}.xlsx"
+                n = schreibe_gesamtexport_xlsx(mitglieder, regeln.halbjahresziel, pfad)
+                protokoll.logge(zustand.protokoll_pfad, "gesamtexport",
+                                {"anzahl": n, "dateien": [pfad.name]})
                 return self._json({"anzahl": n, "datei": str(pfad)})
             self._json({"fehler": "nicht gefunden"}, 404)
 

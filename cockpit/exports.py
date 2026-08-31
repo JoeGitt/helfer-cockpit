@@ -25,6 +25,30 @@ def schreibe_import_xlsx(zeilen, pfad):
     wb.save(pfad)
 
 
+MITGLIEDER_SPALTEN = ["FG-Nummer", "Name", "Gruppen", "Soll", "Ist",
+                      "Status Saison", "Status Halbjahr", "Anzahl Accounts"]
+ACCOUNTS_SPALTEN = ["FG-Nummer", "Name", "Typ", "Zielwert", "Ist-Wert", "Bemerkung"]
+
+
+def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad):
+    """Excel-Gesamtexport (Spez. 6.1): ein Blatt pro Mitglied, ein Blatt pro Account."""
+    wb = openpyxl.Workbook()
+    ws_m = wb.active
+    ws_m.title = "Mitglieder"
+    ws_m.append(MITGLIEDER_SPALTEN)
+    ws_a = wb.create_sheet("Accounts")
+    ws_a.append(ACCOUNTS_SPALTEN)
+    for m in mitglieder:
+        a0 = m.mitglieds_account
+        ws_m.append([m.fg, a0.anzeigename, ", ".join(a0.gruppen), m.soll, m.ist,
+                    status(m, "saison", halbjahresziel), status(m, "halbjahr", halbjahresziel),
+                    len(m.accounts)])
+        for a in m.accounts:
+            ws_a.append([m.fg, a.anzeigename, a.typ.value, a.zielwert, a.ist_wert, a.bemerkung])
+    wb.save(pfad)
+    return len(mitglieder)
+
+
 def schreibe_saeumigen_csv(mitglieder, sicht, halbjahresziel, pfad):
     saeumige = []
     for m in mitglieder:

@@ -64,6 +64,15 @@ class _LeererClient:
         return []
 
 
+def test_gesamtexport_http(server):
+    req = urllib.request.Request(server + "/api/export/gesamt", method="POST", data=b"")
+    with urllib.request.urlopen(req) as r:
+        d = json.loads(r.read())
+    assert d["anzahl"] == 3
+    assert Path(d["datei"]).is_file()
+    assert Path(d["datei"]).name.startswith("gesamtexport-")
+
+
 def test_abruf_fehler_lasst_alte_anzeige_stehen(tmp_path):
     z = _zustand(tmp_path)
     z.api_client_factory = lambda: _LeererClient()

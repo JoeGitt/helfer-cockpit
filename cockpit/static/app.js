@@ -601,6 +601,19 @@ async function saeumigenCsv() {
   }
 }
 
+async function gesamtexport() {
+  try {
+    const r = await fetch("/api/export/gesamt", { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) { zeigeFehler("gesamtexport", d.fehler || "Fehler beim Excel-Gesamtexport."); return; }
+    zeigeFehler("gesamtexport", "");
+    zeigeHinweis(`Excel-Gesamtexport erzeugt: ${d.anzahl} Mitglieder → ${d.datei}`);
+    ladeProtokoll();
+  } catch (err) {
+    zeigeFehler("gesamtexport", "Excel-Gesamtexport fehlgeschlagen: " + String(err.message || err));
+  }
+}
+
 // -------------------------------------------------------------- Wiring ----
 
 document.querySelectorAll(".navitem").forEach((t) => t.addEventListener("click", () => {
@@ -641,6 +654,7 @@ document.getElementById("btn-print").addEventListener("click", () => window.prin
 document.getElementById("btn-print-kontingent").addEventListener("click", () => window.print());
 document.getElementById("btn-saeumige-csv").addEventListener("click", saeumigenCsv);
 document.getElementById("btn-saeumige-csv-bericht").addEventListener("click", saeumigenCsv);
+document.getElementById("btn-gesamtexport").addEventListener("click", gesamtexport);
 
 document.getElementById("fg-datei-waehlen").addEventListener("click", () =>
   document.getElementById("fg-datei-input").click());

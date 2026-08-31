@@ -70,6 +70,32 @@ def test_feld_leerung_wenn_fairgate_telefon_geleert():
     assert len(leerungen) == 1 and "Telefon" in leerungen[0].detail
 
 
+def test_fg_nachtrag_bei_leerer_bemerkung_wird_korrektur():
+    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
+                      "adminRemarks": "", "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")  # haelt Sicherheitsstopp ab
+    k = FgKontakt(fg="FG-7", vorname="Lina", nachname="Brunner", email="lina@example.ch",
+                 telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.duplikat_warnungen == [] and e.klaerliste == []
+    korr = [z for z in e.korrekturen if z.vorname == "Lina"]
+    assert len(korr) == 1
+    assert korr[0].nachname == "Brunner" and korr[0].email == "lina@example.ch"
+    assert korr[0].bemerkungen == "FG-7" and korr[0].zielwert == "2" and korr[0].gruppe == ""
+
+def test_fg_nachtrag_bei_belegter_bemerkung_auf_klaerliste():
+    konto = classify({"id": 1, "firstName": "Noah", "lastName": "Keller", "email": "noah@example.ch",
+                      "adminRemarks": "Zahlt bar", "groups": [{"id": 1, "name": "Mitglied"}],
+                      "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")  # haelt Sicherheitsstopp ab
+    k = FgKontakt(fg="FG-8", vorname="Noah", nachname="Keller", email="noah@example.ch",
+                 telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
+    e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.duplikat_warnungen == [] and e.korrekturen == []
+    assert len(e.klaerliste) == 1
+    assert "Bemerkungsfeld" in e.klaerliste[0]
+
 def test_sicherheitsstopp_ohne_fg_nummern():
     accounts = [_acc(i, f"A{i}", "B", f"{i}@example.ch", None) for i in range(10)]
     with pytest.raises(ValueError):
