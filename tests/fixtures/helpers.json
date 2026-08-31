@@ -33,7 +33,7 @@
    "groups": [{"id": 2, "name": "Freiwillige"}],
    "stateCache": {"okAssignmentsNum": 3, "nokAssignmentsNum": 0, "confirmedAssignmentsNum": 0,
      "reservedAssignmentsNum": 0, "unconfirmedAssignmentsNum": 0,
-     "requestedValue": 0, "plannedValue": 3}},
+     "requestedValue": 3, "plannedValue": 3}},
   {"id": 105, "firstName": "Dario", "lastName": "Ackermann", "email": "dario@example.ch",
    "phone": null, "additionalEmail1": null, "additionalEmail2": null,
    "adminRemarks": "Unbekannt, kein Vereinsbezug, prüfen", "birthDate": null,
