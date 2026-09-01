@@ -28,10 +28,14 @@ def schreibe_import_xlsx(zeilen, pfad):
 MITGLIEDER_SPALTEN = ["FG-Nummer", "Name", "Gruppen", "Soll", "Ist",
                       "Status Saison", "Status Halbjahr", "Anzahl Accounts"]
 ACCOUNTS_SPALTEN = ["FG-Nummer", "Name", "Typ", "Zielwert", "Ist-Wert", "Bemerkung"]
+ALLE_SPALTEN = ["ID", "Name", "Typ", "Gruppen", "FG-Nummer", "Geleistet (OK)",
+                "Nicht erschienen (NOK)", "Zugesagt", "Reserviert", "Ist-Wert", "Zielwert",
+                "Bemerkung"]
 
 
-def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad):
-    """Excel-Gesamtexport (Spez. 6.1): ein Blatt pro Mitglied, ein Blatt pro Account."""
+def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad, accounts=None):
+    """Excel-Gesamtexport (Spez. 6.1): Blatt «Mitglieder», Blatt «Accounts» (Accounts der
+    Mitglieder) und — wenn übergeben — Blatt «Alle Helfenden» mit jedem Portal-Account."""
     wb = openpyxl.Workbook()
     ws_m = wb.active
     ws_m.title = "Mitglieder"
@@ -45,6 +49,13 @@ def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad):
                     len(m.accounts)])
         for a in m.accounts:
             ws_a.append([m.fg, a.anzeigename, a.typ.value, a.zielwert, a.ist_wert, a.bemerkung])
+    if accounts is not None:
+        ws_h = wb.create_sheet("Alle Helfenden")
+        ws_h.append(ALLE_SPALTEN)
+        for a in sorted(accounts, key=lambda x: (x.nachname, x.vorname)):
+            ws_h.append([a.id, a.anzeigename, a.typ.value, ", ".join(a.gruppen), a.fg or "",
+                         a.num_ok, a.num_nok, a.num_confirmed, a.num_reserved,
+                         a.ist_wert, a.zielwert, a.bemerkung])
     wb.save(pfad)
     return len(mitglieder)
 

@@ -32,12 +32,28 @@ class Zustand:
     api_client_factory: object = None
     fehler: str = ""
     assignments_fehler: bool = False   # D6 degradiert: letzter Einsätze-Abruf ist gescheitert
+    org_slug: str = "pfadi-winterthur-handball"   # Teil der Portal-URL (Helfer-Detailseite)
+    fairgate_kategorien: dict = None   # FG → Mitgliedschaft aus dem letzten Fairgate-Export
+
+
+def portal_url(z, helper_id):
+    """Detailseite eines Helfers im Portal (Muster verifiziert am echten Portal)."""
+    return f"https://app.helfereinsatz.ch/{z.org_slug}/de/helpers/detail/{helper_id}"
+
+
+def _account_json(z, a):
+    return {"id": a.id, "name": a.anzeigename, "typ": a.typ.value, "gruppen": a.gruppen,
+            "fg": a.fg, "zielwert": a.zielwert, "ist_wert": a.ist_wert,
+            "num_ok": a.num_ok, "num_nok": a.num_nok, "num_confirmed": a.num_confirmed,
+            "num_reserved": a.num_reserved, "bemerkung": a.bemerkung,
+            "portal_url": portal_url(z, a.id)}
 
 
 def baue_dashboard(z):
     if not z.helpers:
         return {"stand": "", "fehler": z.fehler, "kennzahlen": {}, "mitglieder": [],
-                "hinweise": [], "wer_leistet": {}}
+                "hinweise": [], "wer_leistet": {}, "alle_accounts": [],
+                "kategorie_erfuellung": []}
     regeln, regeln_fehler = lade_regeln_mit_fehler(z.regeln_pfad)
     accounts = [classify(h) for h in z.helpers]
     mitglieder = build_mitglieder(accounts)
@@ -58,9 +74,24 @@ def baue_dashboard(z):
             "soll": m.soll, "ist": m.ist, "soll_konflikt": m.soll_konflikt,
             "status_saison": status(m, "saison", regeln.halbjahresziel),
             "status_halbjahr": status(m, "halbjahr", regeln.halbjahresziel),
-            "accounts": [{"name": a.anzeigename, "typ": a.typ.value,
-                          "soll": a.zielwert, "ist": a.ist_wert, "bemerkung": a.bemerkung}
+            "accounts": [{"id": a.id, "name": a.anzeigename, "typ": a.typ.value,
+                          "soll": a.zielwert, "ist": a.ist_wert, "bemerkung": a.bemerkung,
+                          "num_ok": a.num_ok, "num_nok": a.num_nok,
+                          "num_confirmed": a.num_confirmed, "portal_url": portal_url(z, a.id)}
                          for a in m.accounts]})
+    # Erfüllung nach Fairgate-Kategorie: nur wenn ein Export geladen wurde (Spez 6.2)
+    kategorie_erfuellung = []
+    if z.fairgate_kategorien:
+        agg = {}
+        for m in mitglieder:
+            kat = z.fairgate_kategorien.get(m.fg)
+            if not kat:
+                continue
+            eintrag = agg.setdefault(kat, {"kategorie": kat, "gesamt": 0, "erreicht": 0})
+            eintrag["gesamt"] += 1
+            if status(m, "halbjahr", regeln.halbjahresziel) == "erfuellt":
+                eintrag["erreicht"] += 1
+        kategorie_erfuellung = sorted(agg.values(), key=lambda e: e["kategorie"])
     kennzahlen = {
         "mitglieder": len(mitglieder),
         "erfuellt": sum(1 for m in m_json if m["status_saison"] == "erfuellt"),
@@ -74,6 +105,8 @@ def baue_dashboard(z):
     }
     return {"stand": z.stand, "fehler": z.fehler, "kennzahlen": kennzahlen,
             "mitglieder": m_json, "wer_leistet": wer,
+            "alle_accounts": [_account_json(z, a) for a in accounts],
+            "kategorie_erfuellung": kategorie_erfuellung,
             "hinweise": [{"code": h.code, "schweregrad": h.schweregrad,
                           "text": h.text, "betroffene": h.betroffene} for h in hinweise]}
 
@@ -119,11 +152,34 @@ def starte_server(zustand, port=0):
                 return self._json(asdict(lade_regeln(zustand.regeln_pfad)))
             if pfad == "/api/protokoll":
                 return self._json(protokoll.lese(zustand.protokoll_pfad))
+            # erzeugte Ausgabedateien im Browser öffnen (nur Dateien direkt im Ausgabe-Ordner)
+            if pfad.startswith("/ausgabe/") and zustand.ausgabe_dir:
+                name = pfad[len("/ausgabe/"):]
+                ziel = (zustand.ausgabe_dir / name)
+                wurzel = zustand.ausgabe_dir.resolve()
+                if ("/" in name or "\\" in name or not name or not ziel.is_file()
+                        or ziel.resolve().parent != wurzel):
+                    return self._json({"fehler": "Datei nicht gefunden."}, 404)
+                typ, disposition = {
+                    "html": ("text/html; charset=utf-8", "inline"),
+                    "csv": ("text/csv; charset=utf-8", "attachment"),
+                    "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             "attachment"),
+                }.get(ziel.suffix.lstrip("."), ("application/octet-stream", "attachment"))
+                body = ziel.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", typ)
+                self.send_header("Content-Disposition", f'{disposition}; filename="{ziel.name}"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             # statische Dateien
             datei = STATIC / ("index.html" if pfad == "/" else pfad.lstrip("/").removeprefix("static/"))
             if datei.is_file() and STATIC_RESOLVED in datei.resolve().parents:
                 typ = {"html": "text/html", "js": "text/javascript", "css": "text/css",
-                       "png": "image/png"}.get(datei.suffix.lstrip("."), "application/octet-stream")
+                       "png": "image/png", "woff2": "font/woff2"}.get(
+                           datei.suffix.lstrip("."), "application/octet-stream")
                 body = datei.read_bytes()
                 self.send_response(200)
                 self.send_header("Content-Type", f"{typ}; charset=utf-8")
@@ -180,6 +236,7 @@ def starte_server(zustand, port=0):
                     regeln = lade_regeln(zustand.regeln_pfad)
                     accounts = [classify(h) for h in (zustand.helpers or [])]
                     ergebnis = gleiche_ab(kontakte, accounts, regeln)
+                    zustand.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
                     zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
                     heute = datetime.date.today().isoformat()
                     import_pfad = zustand.ausgabe_dir / f"import-{heute}.xlsx"
@@ -230,7 +287,8 @@ def starte_server(zustand, port=0):
                 mitglieder = build_mitglieder(accounts)
                 zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
                 pfad = zustand.ausgabe_dir / f"gesamtexport-{datetime.date.today().isoformat()}.xlsx"
-                n = schreibe_gesamtexport_xlsx(mitglieder, regeln.halbjahresziel, pfad)
+                n = schreibe_gesamtexport_xlsx(mitglieder, regeln.halbjahresziel, pfad,
+                                               accounts=accounts)
                 protokoll.logge(zustand.protokoll_pfad, "gesamtexport",
                                 {"anzahl": n, "dateien": [pfad.name]})
                 return self._json({"anzahl": n, "datei": str(pfad)})

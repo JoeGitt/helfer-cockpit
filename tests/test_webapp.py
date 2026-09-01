@@ -266,3 +266,81 @@ def test_abruf_fehler_lasst_alte_anzeige_stehen(tmp_path):
         assert d["kennzahlen"]["mitglieder"] == 3
     finally:
         srv.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# Erweiterung «top notch»: alle Accounts, Portal-Links, Kategorie-Erfüllung,
+# Ausgabe-Dateien im Browser öffnen, drittes Export-Blatt.
+# ---------------------------------------------------------------------------
+
+def test_stand_enthaelt_alle_accounts_mit_portal_link(tmp_path):
+    z = _zustand(tmp_path)
+    z.org_slug = "pfadi-winterthur-handball"
+    d = baue_dashboard(z)
+    assert len(d["alle_accounts"]) == 10
+    a = next(x for x in d["alle_accounts"] if x["id"] == 101)
+    assert a["typ"] == "zweitaccount" and a["fg"] == "FG-2417" and a["num_ok"] == 2
+    assert a["portal_url"] == "https://app.helfereinsatz.ch/pfadi-winterthur-handball/de/helpers/detail/101"
+    # auch die Accounts innerhalb der Mitglieder tragen id + Portal-Link
+    m = next(x for x in d["mitglieder"] if x["fg"] == "FG-2417")
+    assert all("portal_url" in acc and "id" in acc for acc in m["accounts"])
+
+
+def _fairgate_xlsx_bytes(zeilen):
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Kontakte", "Kontakt-ID Verein", "Primäre E-Mail", "Vorname", "Nachname",
+               "Handy", "Mitgliedschaft", "E-Mail Eltern 1", "E-Mail Eltern 2", "Geburtsdatum"])
+    for z in zeilen:
+        ws.append(z)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_kategorie_erfuellung_nur_mit_fairgate_export(server):
+    with urllib.request.urlopen(server + "/api/stand") as r:
+        assert json.loads(r.read())["kategorie_erfuellung"] == []
+    daten = _fairgate_xlsx_bytes([
+        ["x", 2417, "lina@example.ch", "Lina", "Brunner", "", "Junioren", "eltern@example.ch", None, "2000-01-01"],
+        ["x", 1083, "noah@example.ch", "Noah", "Keller", "", "Aktivmitglied", None, None, "2000-01-01"],
+    ])
+    req = urllib.request.Request(server + "/api/fairgate", data=daten, method="POST")
+    with urllib.request.urlopen(req) as r:
+        assert r.status == 200
+    with urllib.request.urlopen(server + "/api/stand") as r:
+        ke = json.loads(r.read())["kategorie_erfuellung"]
+    assert {"kategorie": "Junioren", "gesamt": 1, "erreicht": 1} in ke
+    assert {"kategorie": "Aktivmitglied", "gesamt": 1, "erreicht": 1} in ke
+    assert not any(k["kategorie"] == "" for k in ke)
+
+
+def test_ausgabe_datei_wird_ausgeliefert_und_traversal_blockiert(server, tmp_path):
+    ausgabe = tmp_path / "Ausgabe"
+    ausgabe.mkdir(exist_ok=True)
+    (ausgabe / "probe.html").write_text("<p>Probe</p>", encoding="utf-8")
+    (tmp_path / "geheim.txt").write_text("nein", encoding="utf-8")
+    with urllib.request.urlopen(server + "/ausgabe/probe.html") as r:
+        assert r.status == 200 and b"Probe" in r.read()
+        assert "text/html" in r.headers.get("Content-Type", "")
+    import http.client
+    host, port = server.replace("http://", "").split(":")
+    c = http.client.HTTPConnection(host, int(port))
+    c.request("GET", "/ausgabe/../geheim.txt")
+    assert c.getresponse().status == 404
+    c.request("GET", "/ausgabe/gibtsnicht.html")
+    assert c.getresponse().status == 404
+
+
+def test_gesamtexport_hat_blatt_alle_helfenden(server):
+    import openpyxl
+    req = urllib.request.Request(server + "/api/export/gesamt", data=b"", method="POST")
+    with urllib.request.urlopen(req) as r:
+        pfad = json.loads(r.read())["datei"]
+    wb = openpyxl.load_workbook(pfad)
+    assert wb.sheetnames == ["Mitglieder", "Accounts", "Alle Helfenden"]
+    ws = wb["Alle Helfenden"]
+    assert ws.max_row == 11  # Kopf + 10 Accounts
+    assert ws.cell(1, 1).value == "ID" and "Typ" in [c.value for c in ws[1]]

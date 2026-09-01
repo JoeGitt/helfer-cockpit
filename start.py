@@ -49,7 +49,8 @@ def main():
     demo = "--demo" in sys.argv
     zustand = Zustand(regeln_pfad=KONFIG / "regeln.json",
                       protokoll_pfad=KONFIG / "protokoll.jsonl",
-                      ausgabe_dir=Path.cwd() / "Ausgabe")
+                      ausgabe_dir=Path.cwd() / "Ausgabe",
+                      org_slug=ORG_SLUG)
     if demo:
         fixtures = Path(__file__).parent / "tests" / "fixtures"
         zustand.helpers = json.loads((fixtures / "helpers.json").read_text(encoding="utf-8"))
