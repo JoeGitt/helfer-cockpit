@@ -1,718 +1,554 @@
-// Frontend für Helfer-Cockpit 2. Läuft nur gegen 127.0.0.1 — kein externer Zugriff,
-// kein Framework, kein CDN. Alle Daten kommen per fetch() von der lokalen JSON-API.
+// Helfer-Cockpit 2 — Frontend. Läuft ausschliesslich gegen 127.0.0.1, ohne Framework,
+// ohne CDN. Alle Daten kommen per fetch() von der lokalen JSON-API (cockpit/webapp.py).
+"use strict";
 
-let sichtAktuell = "saison";       // "saison" | "halbjahr"
-let filterAktuell = "alle";        // "alle" | "erfuellt" | "auf_kurs" | "saeumig" | "zweitaccount"
-let sucheAktuell = "";
-let mitgliederAktuell = [];
-let regelnAktuell = null;
-let letzterStand = null;
-
-const TYP_LABEL = {
-  mitglied: "Mitglieds-Account",
-  zweitaccount: "Zweitaccount",
-  freiwillig: "Freiwillig",
-  unbekannt: "Unbekannt",
-  unklassifiziert: "Unklassifiziert",
+// ------------------------------------------------------------------ Zustand ----
+const S = {
+  sicht: "saison",                          // "saison" | "halbjahr"
+  daten: null,                              // letzte Antwort von /api/stand
+  regeln: null,
+  k: { filter: "alle", suche: "", sort: { key: "status", dir: "asc" }, offen: new Set() },
+  h: { filter: "alle", suche: "", sort: { key: "name", dir: "asc" } },
 };
 
+const TYP_LABEL = { mitglied: "Mitglied", zweitaccount: "Zweitaccount", freiwillig: "Freiwillig",
+                    unbekannt: "Unbekannt", unklassifiziert: "Unklassifiziert" };
+const STATUS = {
+  erfuellt: { label: "Erfüllt", cls: "ok", rang: 2 },
+  auf_kurs: { label: "Auf Kurs", cls: "warn", rang: 1 },
+  saeumig:  { label: "Säumig", cls: "crit", rang: 0 },
+};
+const SCHWERE = {
+  kritisch: { titel: "Kritisch — jetzt bereinigen", cls: "crit", farbe: "var(--red)" },
+  warnung:  { titel: "Warnung — beim nächsten Abgleich", cls: "warn", farbe: "var(--warn)" },
+  hinweis:  { titel: "Hinweis — zur Kenntnis", cls: "info", farbe: "var(--info)" },
+};
+
+// ------------------------------------------------------------------ Helfer ----
+const $ = (id) => document.getElementById(id);
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmt(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(".", ","); }
+function ic(name, cls = "") { return `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
+function basename(p) { return String(p || "").split(/[\\/]/).pop(); }
+function ausgabeLink(pfad) { return "/ausgabe/" + encodeURIComponent(basename(pfad)); }
+function vergleich(a, b) {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a ?? "").localeCompare(String(b ?? ""), "de", { sensitivity: "base", numeric: true });
 }
 
-function fmtNum(n) {
-  n = Number(n) || 0;
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
-}
-
-// Mehrere Fehlerquellen können gleichzeitig aktiv sein (z. B. Regeln-Laden
-// schlägt fehl, Stand-Laden gelingt danach) — eine erfolgreiche Quelle darf
-// den Banner einer anderen, weiterhin fehlgeschlagenen Quelle NICHT stumm
-// überschreiben. Darum je Quelle ein Eintrag, Banner zeigt alle aktiven.
+// Fehler je Quelle — eine erfolgreiche Quelle darf den Fehler einer anderen nicht löschen.
 const fehlerQuellen = new Map();
-
 function zeigeFehler(quelle, msg) {
-  if (msg) {
-    fehlerQuellen.set(quelle, msg);
-  } else {
-    fehlerQuellen.delete(quelle);
-  }
-  const el = document.getElementById("fehler-banner");
-  if (fehlerQuellen.size) {
-    el.textContent = "⚠ " + [...fehlerQuellen.values()].join("  ·  ");
-    el.hidden = false;
-  } else {
-    el.hidden = true;
-    el.textContent = "";
-  }
+  if (msg) fehlerQuellen.set(quelle, msg); else fehlerQuellen.delete(quelle);
+  const el = $("fehler-banner");
+  $("fehler-text").textContent = [...fehlerQuellen.values()].join("  ·  ");
+  el.hidden = fehlerQuellen.size === 0;
 }
-
-let _hinweisTimer = null;
-function zeigeHinweis(msg) {
-  const el = document.getElementById("hinweis-banner");
-  el.textContent = msg;
+let toastTimer = null;
+function toast(msg, link) {
+  const el = $("toast");
+  el.innerHTML = ic("check") + `<span>${esc(msg)}</span>` +
+    (link ? ` <a href="${esc(link.href)}" target="_blank" rel="noopener">${esc(link.text)}</a>` : "");
   el.hidden = false;
-  clearTimeout(_hinweisTimer);
-  _hinweisTimer = setTimeout(() => { el.hidden = true; }, 6000);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, link ? 12000 : 5000);
 }
-
-// ---------------------------------------------------------------- Laden ----
-
-// Holt JSON von der lokalen API und wirft bei Transportfehlern (Server nicht
-// erreichbar, Nicht-2xx-Status) einen Error mit verständlicher deutscher
-// Meldung — nie ein stilles Scheitern. Nutzt d.fehler aus der Antwort, wenn
-// vorhanden, sonst einen generischen Text mit Status/URL.
 async function holeJson(url, optionen) {
-  let antwort;
-  try {
-    antwort = await fetch(url, optionen);
-  } catch (netzwerkFehler) {
-    throw new Error(`Server nicht erreichbar (${url}) — läuft das Cockpit noch?`);
-  }
+  let r;
+  try { r = await fetch(url, optionen); }
+  catch (e) { throw new Error(`Server nicht erreichbar (${url}) — läuft das Cockpit noch?`); }
   let daten = null;
-  try {
-    daten = await antwort.json();
-  } catch (parseFehler) {
-    daten = null;
-  }
-  if (!antwort.ok) {
-    const meldung = (daten && daten.fehler) ? daten.fehler : `Serverfehler ${antwort.status} bei ${url}.`;
-    throw new Error(meldung);
-  }
+  try { daten = await r.json(); } catch (e) { daten = null; }
+  if (!r.ok) throw new Error((daten && daten.fehler) || `Serverfehler ${r.status} bei ${url}.`);
   return daten;
 }
 
+// ------------------------------------------------------------------ Navigation ----
+function zeigePanel(id) {
+  document.querySelectorAll(".navitem").forEach((b) => {
+    if (b.dataset.panel === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  document.querySelectorAll("section.panel").forEach((p) => p.classList.toggle("active", p.id === id));
+  window.scrollTo({ top: 0 });
+}
+
+// ------------------------------------------------------------------ Laden ----
 async function ladeStand() {
-  try {
-    const d = await holeJson("/api/stand");
-    zeigeFehler("stand-transport", "");
-    anwenden(d);
-  } catch (err) {
-    zeigeFehler("stand-transport", "Stand konnte nicht geladen werden: " + err.message);
-  }
+  try { anwenden(await holeJson("/api/stand")); zeigeFehler("stand-transport", null); }
+  catch (e) { zeigeFehler("stand-transport", e.message); }
 }
-
-function knopfDeaktivieren(state) {
-  const b = document.getElementById("btn-abruf");
-  b.disabled = state;
-  b.textContent = state ? "… lädt" : "↻ Daten neu abrufen";
-}
-
 async function abrufen() {
-  knopfDeaktivieren(true);
+  const btn = $("btn-abrufen");
+  btn.disabled = true; btn.querySelector(".ic").classList.add("spin"); btn.querySelector("span").textContent = "Wird abgerufen …";
   try {
     const d = await holeJson("/api/abruf", { method: "POST" });
-    zeigeFehler("abruf-transport", "");
     anwenden(d);
+    zeigeFehler("abruf-transport", null);
+    if (!d.fehler) toast(`Abgerufen: ${d.alle_accounts.length} Accounts, ${d.mitglieder.length} Mitglieder.`);
     ladeProtokoll();
-  } catch (err) {
-    zeigeFehler("abruf-transport", "Abruf fehlgeschlagen: " + err.message);
-  } finally {
-    knopfDeaktivieren(false);
-  }
+  } catch (e) { zeigeFehler("abruf-transport", e.message); }
+  finally { btn.disabled = false; btn.querySelector(".ic").classList.remove("spin"); btn.querySelector("span").textContent = "Daten neu abrufen"; }
+}
+async function ladeRegeln() {
+  try { S.regeln = await holeJson("/api/regeln"); befuelleRegeln(); zeigeFehler("regeln-transport", null); }
+  catch (e) { zeigeFehler("regeln-transport", e.message); }
+}
+async function ladeProtokoll() {
+  try { renderProtokoll(await holeJson("/api/protokoll")); zeigeFehler("protokoll-transport", null); }
+  catch (e) { zeigeFehler("protokoll-transport", e.message); }
 }
 
 function anwenden(d) {
-  letzterStand = d;
-  mitgliederAktuell = d.mitglieder || [];
-  renderKennzahlen(d.kennzahlen, d.stand, d.fehler);
-  renderTabelle();
-  renderHinweise(d.hinweise || []);
-  renderBericht(d);
-  aktualisiereAbgleichHelferStatus(d);
+  S.daten = d;
+  zeigeFehler("stand", d.fehler || null);
+  const geladen = d.mitglieder.length > 0 || d.alle_accounts.length > 0;
+  $("stand-anzeige").textContent = geladen ? `${d.alle_accounts.length} Accounts · Stand ${d.stand}` : "Noch nicht abgerufen";
+  $("nav-n-kontingent").textContent = geladen ? d.mitglieder.length : "";
+  $("nav-n-helfende").textContent = geladen ? d.alle_accounts.length : "";
+  const nDq = $("nav-n-dq");
+  nDq.textContent = d.hinweise.length || "";
+  nDq.className = "n num " + (d.hinweise.some((h) => h.schweregrad === "kritisch") ? "crit" : d.hinweise.length ? "warn" : "");
+  $("abgleich-helfer-status").innerHTML = geladen
+    ? ic("check") + `<span>Automatisch über die API — ${d.alle_accounts.length} Accounts, Stand ${esc(d.stand)}</span>`
+    : ic("info") + `<span>Noch nicht abgerufen — «Daten neu abrufen» in der Seitenleiste.</span>`;
+  renderKennzahlen(); renderTabelleK(); renderTabelleH(); renderBericht(); renderDQ();
 }
 
-// ------------------------------------------------------------ Kennzahlen ----
+// ------------------------------------------------------------------ Kontingent ----
+function statusVon(m) { return S.sicht === "saison" ? m.status_saison : m.status_halbjahr; }
+function zielVon(m) { return S.sicht === "saison" ? m.soll : (S.regeln ? S.regeln.halbjahresziel : 1); }
+function prozent(m) { const z = zielVon(m); return z > 0 ? Math.min(100, Math.round(m.ist / z * 100)) : 100; }
+function balken(m) {
+  const s = statusVon(m); const cls = s === "erfuellt" ? "g" : s === "auf_kurs" ? "o" : "r";
+  return `<span class="bar" aria-hidden="true"><i class="${cls}" style="width:${Math.max(prozent(m), m.ist > 0 ? 6 : 0)}%"></i></span>`;
+}
+function statusChip(s) { const st = STATUS[s] || STATUS.saeumig; return `<span class="status ${st.cls}">${st.label}</span>`; }
 
-function renderKennzahlen(k, stand, fehler) {
-  zeigeFehler("stand", fehler);
-  const leer = !k || k.mitglieder === undefined;
-  document.getElementById("kpi-erfuellt").textContent =
-    leer ? "– / –" : `${k.erfuellt} / ${k.mitglieder}`;
-  document.getElementById("kpi-halbjahr").textContent =
-    leer ? "– / –" : `${k.halbjahr_erreicht} / ${k.mitglieder}`;
-  document.getElementById("kpi-ohne-einsatz").textContent =
-    leer ? "–" : fmtNum(k.ohne_einsatz);
-  document.getElementById("kpi-ist-soll").textContent =
-    leer ? "– / –" : `${fmtNum(k.ist_summe)} / ${fmtNum(k.soll_summe)}`;
-  document.getElementById("kpi-zweitaccounts").textContent =
-    leer ? "–" : fmtNum(k.zweitaccounts);
-  document.getElementById("nav-kontingent").textContent = leer ? "–" : fmtNum(k.mitglieder);
-  document.getElementById("nav-dq").textContent = leer ? "–" : fmtNum(k.hinweise);
-  const standEl = document.getElementById("stand-anzeige");
-  if (leer) {
-    standEl.innerHTML = "Helfertool-API<br><b>Noch keine Daten geladen</b>";
-  } else {
-    standEl.innerHTML = `Helfertool-API<br><b>${fmtNum(k.mitglieder)} Mitglieder erfasst` +
-      (stand ? ` · Stand ${esc(stand)}` : "") + "</b>";
-  }
+function setSicht(sicht) {
+  S.sicht = sicht;
+  document.querySelectorAll('.seg [data-sicht]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sicht === sicht)));
+  $("sicht-label").textContent = sicht === "saison" ? "Sicht: Saison-Soll" : `Sicht: Halbjahresziel (mind. ${S.regeln ? S.regeln.halbjahresziel : 1} Einsatz)`;
+  if (S.daten) { renderKennzahlen(); renderTabelleK(); renderBericht(); }
 }
 
-// --------------------------------------------------------- Sicht/Filter ----
-
-function statusFeld() {
-  return sichtAktuell === "saison" ? "status_saison" : "status_halbjahr";
+function renderKennzahlen() {
+  const d = S.daten, k = d.kennzahlen, n = d.mitglieder.length;
+  const of = (x) => `${fmt(x)}<span class="of">/ ${n}</span>`;
+  const geladen = n > 0;
+  $("kpi-erfuellt").innerHTML = geladen ? of(k.erfuellt) : "–";
+  $("kpi-erfuellt-h").textContent = geladen ? `${Math.round(k.erfuellt / n * 100)} % der Mitglieder` : "";
+  $("kpi-halbjahr").innerHTML = geladen ? of(k.halbjahr_erreicht) : "–";
+  $("kpi-halbjahr-h").textContent = geladen ? `mind. ${S.regeln ? S.regeln.halbjahresziel : 1} Einsatz bis Halbjahr` : "";
+  $("kpi-ohne").textContent = geladen ? fmt(k.ohne_einsatz) : "–";
+  $("kpi-istsoll").innerHTML = geladen ? `${fmt(k.ist_summe)}<span class="of">/ ${fmt(k.soll_summe)}</span>` : "–";
+  $("kpi-zweit").textContent = geladen ? fmt(k.zweitaccounts) : "–";
+  // Chip-Zähler (immer über den Gesamtbestand, unabhängig vom aktiven Filter)
+  const z = { alle: n, erfuellt: 0, auf_kurs: 0, saeumig: 0, zweitaccount: 0 };
+  d.mitglieder.forEach((m) => { z[statusVon(m)]++; if (m.accounts.length > 1) z.zweitaccount++; });
+  document.querySelectorAll("#chips-kontingent .chip").forEach((c) => { c.querySelector(".c").textContent = z[c.dataset.filter] ?? 0; });
 }
 
-function zielFuerSicht(m) {
-  return sichtAktuell === "saison" ? m.soll : Number(regelnAktuell?.halbjahresziel ?? 1);
-}
-
-function setSicht(s) {
-  sichtAktuell = s;
-  document.getElementById("sicht-saison").setAttribute("aria-pressed", String(s === "saison"));
-  document.getElementById("sicht-halbjahr").setAttribute("aria-pressed", String(s === "halbjahr"));
-  document.getElementById("kontingent-meta").textContent =
-    "Sicht: " + (s === "saison" ? "Saison-Soll" : "Halbjahresziel");
-  document.getElementById("th-soll").textContent = s === "saison" ? "Soll" : "Ziel";
-  document.getElementById("chip-auf-kurs-btn").hidden = s !== "saison";
-  if (s === "halbjahr" && filterAktuell === "auf_kurs") {
-    filterAktuell = "alle";
-    document.querySelectorAll("#p-kontingent .chips .chip[data-filter]").forEach((c) =>
-      c.setAttribute("aria-pressed", c.dataset.filter === "alle" ? "true" : "false"));
-  }
-  renderTabelle();
-  if (letzterStand) renderBericht(letzterStand);
-}
-
-// -------------------------------------------------------------- Tabelle ----
-
-function renderTabelle() {
-  const feld = statusFeld();
-  const alle = mitgliederAktuell;
-
-  const zaehlung = { alle: alle.length, erfuellt: 0, auf_kurs: 0, saeumig: 0, zweitaccount: 0 };
-  for (const m of alle) {
-    if (m[feld] === "erfuellt") zaehlung.erfuellt++;
-    else if (m[feld] === "auf_kurs") zaehlung.auf_kurs++;
-    else if (m[feld] === "saeumig") zaehlung.saeumig++;
-    if (m.accounts.some((a) => a.typ === "zweitaccount")) zaehlung.zweitaccount++;
-  }
-  document.getElementById("chip-alle").textContent = zaehlung.alle;
-  document.getElementById("chip-erfuellt").textContent = zaehlung.erfuellt;
-  document.getElementById("chip-auf-kurs").textContent = zaehlung.auf_kurs;
-  document.getElementById("chip-saeumig").textContent = zaehlung.saeumig;
-  document.getElementById("chip-zweitaccount").textContent = zaehlung.zweitaccount;
-
-  const q = sucheAktuell.trim().toLowerCase();
-  let gefiltert = alle.filter((m) => {
-    if (filterAktuell === "erfuellt" && m[feld] !== "erfuellt") return false;
-    if (filterAktuell === "auf_kurs" && m[feld] !== "auf_kurs") return false;
-    if (filterAktuell === "saeumig" && m[feld] !== "saeumig") return false;
-    if (filterAktuell === "zweitaccount" && !m.accounts.some((a) => a.typ === "zweitaccount")) return false;
-    if (q && !(`${m.name} ${m.fg}`.toLowerCase().includes(q))) return false;
+function gefilterteMitglieder() {
+  const f = S.k.filter, q = S.k.suche.trim().toLowerCase();
+  let liste = S.daten.mitglieder.filter((m) => {
+    if (f === "zweitaccount" && m.accounts.length < 2) return false;
+    if (f !== "alle" && f !== "zweitaccount" && statusVon(m) !== f) return false;
+    if (q && !(m.name.toLowerCase().includes(q) || m.fg.toLowerCase().includes(q)
+               || m.accounts.some((a) => a.name.toLowerCase().includes(q)))) return false;
     return true;
   });
+  const { key, dir } = S.k.sort;
+  const wert = (m) => ({
+    name: m.name, gruppen: m.gruppen.join(", "), accounts: m.accounts.length, soll: m.soll, ist: m.ist,
+    status: STATUS[statusVon(m)].rang,
+  })[key];
+  liste.sort((a, b) => (vergleich(wert(a), wert(b)) || vergleich(a.name, b.name)) * (dir === "asc" ? 1 : -1));
+  return liste;
+}
 
-  const rang = { saeumig: 0, auf_kurs: 1, erfuellt: 2 };
-  gefiltert = gefiltert.slice().sort((a, b) => {
-    const r = (rang[a[feld]] ?? 3) - (rang[b[feld]] ?? 3);
-    return r !== 0 ? r : a.name.localeCompare(b.name, "de-CH");
+function hinweiseZu(m) {
+  const namen = new Set(m.accounts.map((a) => a.name));
+  return (S.daten.hinweise || []).filter((h) => h.betroffene.some((b) => b === m.fg || b.includes(m.fg) || namen.has(nameAus(b))));
+}
+function nameAus(betroffen) { return String(betroffen).split(/ \(|: |«/)[0].trim(); }
+
+function renderTabelleK() {
+  const liste = gefilterteMitglieder();
+  const body = $("tab-mitglieder-body");
+  const n = S.daten.mitglieder.length;
+  if (!n) { body.innerHTML = `<tr><td colspan="7"><div class="empty"><b>Noch keine Daten</b>Klicke links auf «Daten neu abrufen», um die Helfenden aus dem Portal zu laden.</div></td></tr>`; $("tfoot-kontingent").textContent = ""; return; }
+  if (!liste.length) { body.innerHTML = `<tr><td colspan="7"><div class="empty"><b>Kein Treffer</b>Filter oder Suchbegriff anpassen.</div></td></tr>`; }
+  else body.innerHTML = liste.map(zeileK).join("");
+  const sortName = { name: "Name", gruppen: "Gruppen", accounts: "Accounts", soll: "Soll", ist: "Ist", status: "Status" }[S.k.sort.key];
+  $("tfoot-kontingent").innerHTML = `<span>${liste.length} von ${n} Mitgliedern</span><span>· sortiert nach ${sortName}</span><span style="margin-left:auto">Zusammenführung ausschliesslich über FG-Nummer</span>`;
+  markiereSort("tab-mitglieder", S.k.sort);
+}
+
+function zeileK(m) {
+  const offen = S.k.offen.has(m.fg);
+  const mehrere = m.accounts.length > 1;
+  const summanden = mehrere ? `<span class="sub">(${m.accounts.map((a) => fmt(a.ist)).join(" + ")})</span>` : "";
+  const konflikt = m.soll_konflikt ? ` <span class="konflikt" title="Mehrere Mitglieds-Accounts mit dieser FG-Nummer — im Portal bereinigen">${ic("alert", "sm")}Konflikt</span>` : "";
+  return `
+    <tr class="row" data-fg="${esc(m.fg)}" role="button" tabindex="0" aria-expanded="${offen}">
+      <td><div class="cell-name">${ic("chev", "sm chev")}<div><span class="name">${esc(m.name)}</span> <span class="fgtag">${esc(m.fg)}</span></div></div></td>
+      <td class="sub">${esc(m.gruppen.join(", "))}</td>
+      <td class="r num">${m.accounts.length}</td>
+      <td class="r num">${fmt(m.soll)}${konflikt}</td>
+      <td class="r num"><b>${fmt(m.ist)}</b> ${summanden}</td>
+      <td>${balken(m)}</td>
+      <td>${statusChip(statusVon(m))}</td>
+    </tr>
+    <tr class="detail" data-detail="${esc(m.fg)}" ${offen ? "" : "hidden"}><td colspan="7">${offen ? ledger(m) : ""}</td></tr>`;
+}
+
+function ledger(m) {
+  const zeilen = m.accounts.map((a) => `
+    <tr><td><b>${esc(a.name)}</b></td><td><span class="typ ${esc(a.typ)}">${TYP_LABEL[a.typ] || a.typ}</span></td>
+    <td class="r num">${fmt(a.ist)}</td><td class="r num">${fmt(a.soll)}</td><td class="r num">${a.num_ok} / ${a.num_confirmed} / ${a.num_nok}</td>
+    <td class="sub">${esc(a.bemerkung) || "—"}</td>
+    <td><a class="plink" href="${esc(a.portal_url)}" target="_blank" rel="noopener" title="Im Helferportal öffnen">${ic("external", "sm")}Portal</a></td></tr>`).join("");
+  const hinweise = hinweiseZu(m);
+  const dq = hinweise.length ? `<div class="dq">${hinweise.map((h) => `<div><span class="code ${SCHWERE[h.schweregrad].cls}">${esc(h.code)}</span><span>${esc(h.text)}</span></div>`).join("")}</div>` : "";
+  const ziel = zielVon(m);
+  const sum = `Ist ${fmt(m.ist)} ${m.accounts.length > 1 ? "= " + m.accounts.map((a) => fmt(a.ist)).join(" + ") : ""} · Ziel ${fmt(ziel)} (${S.sicht === "saison" ? "Saison-Soll" : "Halbjahresziel"})`;
+  return `<div class="ledger">
+    <table><thead><tr><th>Account</th><th>Typ</th><th class="r">Ist</th><th class="r">Soll</th><th class="r" title="Geleistet / Zugesagt / Nicht erschienen">OK / Zug. / NOK</th><th>Bemerkung</th><th></th></tr></thead><tbody>${zeilen}</tbody></table>
+    <div class="sum num">${esc(sum)}</div>${dq}</div>`;
+}
+
+function toggleZeile(fg) {
+  if (S.k.offen.has(fg)) S.k.offen.delete(fg); else S.k.offen.add(fg);
+  renderTabelleK();
+}
+
+function springeZuMitglied(fg) {
+  S.k.filter = "alle"; S.k.suche = ""; $("suche-kontingent").value = "";
+  document.querySelectorAll("#chips-kontingent .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.filter === "alle")));
+  S.k.offen.add(fg);
+  zeigePanel("p-kontingent"); renderTabelleK();
+  const tr = document.querySelector(`#tab-mitglieder-body tr.row[data-fg="${CSS.escape(fg)}"]`);
+  if (tr) { tr.scrollIntoView({ block: "center" }); tr.classList.add("flash"); tr.focus(); }
+}
+
+// ------------------------------------------------------------------ Alle Helfenden ----
+function gefilterteAccounts() {
+  const f = S.h.filter, q = S.h.suche.trim().toLowerCase();
+  let liste = S.daten.alle_accounts.filter((a) => {
+    if (f === "aktiv" && !(a.num_ok + a.num_confirmed > 0)) return false;
+    if (f !== "alle" && f !== "aktiv" && a.typ !== f) return false;
+    if (q && !(a.name.toLowerCase().includes(q) || (a.fg || "").toLowerCase().includes(q)
+               || a.gruppen.join(", ").toLowerCase().includes(q))) return false;
+    return true;
   });
-
-  const tbody = document.getElementById("tab-mitglieder");
-  tbody.innerHTML = "";
-  for (const m of gefiltert) {
-    const ziel = zielFuerSicht(m);
-    const status = m[feld];
-    const pct = ziel > 0 ? Math.min(100, (m.ist / ziel) * 100) : 100;
-    const barKlasse = status === "erfuellt" ? "g" : status === "auf_kurs" ? "o" : "r";
-    const statusKlasse = status === "erfuellt" ? "ok" : status === "auf_kurs" ? "warn" : "crit";
-    const statusText = status === "erfuellt" ? "Erfüllt" : status === "auf_kurs" ? "Auf Kurs" : "Säumig";
-    const detailId = "d-" + m.fg.replace(/[^A-Za-z0-9]/g, "");
-
-    let istZelle = `<b>${fmtNum(m.ist)}</b>`;
-    let accountsZelle = `<span class="fg">1</span>`;
-    if (m.accounts.length > 1) {
-      const mitgliedIst = m.accounts.find((a) => a.typ === "mitglied")?.ist ?? 0;
-      const andereIst = m.ist - mitgliedIst;
-      istZelle += ` <span class="fg">(${fmtNum(mitgliedIst)}+${fmtNum(andereIst)})</span>`;
-      accountsZelle = `<button class="acct-badge" data-toggle="${detailId}" data-count="${m.accounts.length}" aria-expanded="false">▸ ${m.accounts.length}</button>`;
-    }
-
-    // I4: Soll-Konflikt (mehrere Mitglieds-Accounts derselben FG-Nummer, D3) sichtbar
-    // machen, damit die Zeile nicht wie ein normaler Einzel-Soll-Wert gelesen wird.
-    const konfliktTitel = "Mehrere Mitglieds-Accounts — im Portal bereinigen";
-    const konfliktBadge = m.soll_konflikt
-      ? ` <span class="soll-konflikt" title="${esc(konfliktTitel)}" style="color:var(--red-ink)">⚠</span>`
-      : "";
-
-    const tr = document.createElement("tr");
-    tr.className = "member" + (m.soll_konflikt ? " soll-konflikt-zeile" : "");
-    tr.innerHTML = `
-      <td><span class="name">${esc(m.name)}</span> <span class="fg">${esc(m.fg)}</span></td>
-      <td>${esc((m.gruppen || []).join(", "))}</td>
-      <td>${accountsZelle}</td>
-      <td class="num">${fmtNum(ziel)}${konfliktBadge}</td>
-      <td class="num">${istZelle}</td>
-      <td><span class="bar"><i class="${barKlasse}" style="width:${pct}%"></i></span></td>
-      <td><span class="status ${statusKlasse}">${statusText}</span></td>`;
-    tbody.appendChild(tr);
-
-    if (m.accounts.length > 1) {
-      const detail = document.createElement("tr");
-      detail.className = "detail";
-      detail.id = detailId;
-      detail.hidden = true;
-      const subrows = m.accounts.map((a) => `
-        <div class="subrow">
-          <span class="who">${esc(a.name)} <span class="fg">· ${TYP_LABEL[a.typ] || a.typ}</span></span>
-          <span class="num">Ist ${fmtNum(a.ist)} · Soll ${fmtNum(a.soll)}</span>
-          <span class="meta">${esc(m.fg)}${a.bemerkung ? " · " + esc(a.bemerkung) : ""}</span>
-        </div>`).join("");
-      detail.innerHTML = `<td colspan="7"><div class="subaccounts">${subrows}</div></td>`;
-      tbody.appendChild(detail);
-    }
-  }
-
-  document.getElementById("tab-mitglieder-status").textContent =
-    `Zeilen 1–${gefiltert.length} von ${alle.length} · sortiert nach Status · ` +
-    "Zusammenführung ausschliesslich über FG-Nummer";
+  const { key, dir } = S.h.sort;
+  const wert = (a) => key === "gruppen" ? a.gruppen.join(", ") : key === "typ" ? (TYP_LABEL[a.typ] || a.typ) : a[key];
+  liste.sort((a, b) => (vergleich(wert(a), wert(b)) || vergleich(a.name, b.name)) * (dir === "asc" ? 1 : -1));
+  return liste;
+}
+function renderTabelleH() {
+  const d = S.daten, alle = d.alle_accounts;
+  const z = { alle: alle.length, aktiv: 0 };
+  alle.forEach((a) => { z[a.typ] = (z[a.typ] || 0) + 1; if (a.num_ok + a.num_confirmed > 0) z.aktiv++; });
+  document.querySelectorAll("#chips-helfende .chip").forEach((c) => {
+    const t = c.dataset.typ; c.querySelector(".c").textContent = z[t] || 0;
+    if (t === "unklassifiziert") c.hidden = !z[t];
+  });
+  const liste = gefilterteAccounts(), body = $("tab-helfende-body");
+  if (!alle.length) { body.innerHTML = `<tr><td colspan="8"><div class="empty"><b>Noch keine Daten</b>Klicke links auf «Daten neu abrufen».</div></td></tr>`; $("tfoot-helfende").textContent = ""; return; }
+  if (!liste.length) body.innerHTML = `<tr><td colspan="8"><div class="empty"><b>Kein Treffer</b>Filter oder Suchbegriff anpassen.</div></td></tr>`;
+  else body.innerHTML = liste.map((a) => `
+    <tr data-id="${a.id}">
+      <td><span class="name">${esc(a.name)}</span> ${a.fg ? `<span class="fgtag">${esc(a.fg)}</span>` : ""}</td>
+      <td><span class="typ ${esc(a.typ)}">${TYP_LABEL[a.typ] || esc(a.typ)}</span></td>
+      <td class="sub">${esc(a.gruppen.join(", "))}</td>
+      <td class="r num"><b>${a.num_ok}</b></td>
+      <td class="r num">${a.num_confirmed}</td>
+      <td class="r num">${a.num_nok ? `<span style="color:var(--red-ink);font-weight:600">${a.num_nok}</span>` : "0"}</td>
+      <td class="r num sub">${fmt(a.ist_wert)}${a.zielwert ? ` / ${fmt(a.zielwert)}` : ""}</td>
+      <td><a class="plink" href="${esc(a.portal_url)}" target="_blank" rel="noopener" title="Im Helferportal öffnen">${ic("external", "sm")}Öffnen</a></td>
+    </tr>`).join("");
+  const sortName = { name: "Name", typ: "Typ", gruppen: "Gruppen", num_ok: "Geleistet", num_confirmed: "Zugesagt", num_nok: "Nicht erschienen", ist_wert: "Wert" }[S.h.sort.key];
+  $("tfoot-helfende").innerHTML = `<span>${liste.length} von ${alle.length} Accounts</span><span>· sortiert nach ${sortName}</span><span style="margin-left:auto">Wert = angerechnete Einsatzwerte (bei Gutschrift beim Begünstigten)</span>`;
+  markiereSort("tab-helfende", S.h.sort);
+}
+function springeZuHelfer(id, name) {
+  S.h.filter = "alle"; S.h.suche = name || ""; $("suche-helfende").value = S.h.suche;
+  document.querySelectorAll("#chips-helfende .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.typ === "alle")));
+  zeigePanel("p-helfende"); renderTabelleH();
+  const tr = document.querySelector(`#tab-helfende-body tr[data-id="${CSS.escape(String(id))}"]`);
+  if (tr) { tr.classList.add("row", "flash"); tr.scrollIntoView({ block: "center" }); }
 }
 
-// -------------------------------------------------------------- Hinweise ----
-
-function renderHinweise(hinweise) {
-  const ul = document.getElementById("dq-liste");
-  ul.innerHTML = "";
-  document.getElementById("dq-meta").textContent = hinweise.length
-    ? `Wird bei jedem API-Abruf geprüft · ${hinweise.length} offene Hinweise`
-    : "Wird bei jedem API-Abruf geprüft · keine offenen Hinweise";
-  if (!hinweise.length) {
-    ul.innerHTML = '<li class="leer">Keine offenen Hinweise.</li>';
-    return;
-  }
-  const SEV = { kritisch: "crit", warnung: "warn", hinweis: "info" };
-  for (const h of hinweise) {
-    const li = document.createElement("li");
-    let betroffeneText = "";
-    if (h.betroffene && h.betroffene.length) {
-      const auszug = h.betroffene.slice(0, 8);
-      betroffeneText = ` — ${auszug.map(esc).join(", ")}` +
-        (h.betroffene.length > auszug.length ? ` (+${h.betroffene.length - auszug.length} weitere)` : "");
-    }
-    // Rein visuelles Abhaken zur persönlichen Übersicht beim Abarbeiten — wird nirgends
-    // gespeichert, verschwindet beim nächsten Laden der Hinweise wieder.
-    li.innerHTML = `<label class="dq-check"><input type="checkbox">` +
-      `<span class="sev ${SEV[h.schweregrad] || "info"}"></span>` +
-      `<span><b>${esc(h.code)}</b> ${esc(h.text)}${betroffeneText}</span></label>`;
-    ul.appendChild(li);
-  }
+// ------------------------------------------------------------------ Sortierung ----
+function markiereSort(tableId, sort) {
+  document.querySelectorAll(`#${tableId} th[data-sort]`).forEach((th) => {
+    const aktiv = th.dataset.sort === sort.key;
+    th.setAttribute("aria-sort", aktiv ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
+    th.querySelector(".sorticon").textContent = aktiv ? (sort.dir === "asc" ? "↑" : "↓") : "↕";
+  });
+}
+function bindeSort(tableId, sort, neuRendern) {
+  document.querySelectorAll(`#${tableId} th[data-sort]`).forEach((th) => th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (sort.key === key) sort.dir = sort.dir === "asc" ? "desc" : "asc";
+    else { sort.key = key; sort.dir = ["soll", "ist", "num_ok", "num_confirmed", "num_nok", "ist_wert", "accounts"].includes(key) ? "desc" : "asc"; }
+    neuRendern();
+  }));
 }
 
-// -------------------------------------------------------------- Bericht ----
+// ------------------------------------------------------------------ Bericht ----
+function renderBericht() {
+  const d = S.daten, k = d.kennzahlen, n = d.mitglieder.length, geladen = n > 0;
+  $("b-stand").textContent = geladen ? `Stand ${d.stand}` : "";
+  const pct = geladen && k.soll_summe > 0 ? Math.round(k.ist_summe / k.soll_summe * 100) : 0;
+  $("b-pct").textContent = geladen ? `${pct} %` : "–";
+  $("b-ring-fill").setAttribute("stroke-dasharray", `${(Math.min(pct, 100) / 100 * 263.9).toFixed(1)} 263.9`);
+  $("b-ring-fill").setAttribute("stroke", pct >= 100 ? "var(--ok)" : "var(--red)");
+  $("b-sub").innerHTML = geladen ? `${fmt(k.ist_summe)} geleistete von ${fmt(k.soll_summe)} geforderten Einsätzen.<br>Zwischenziel Halbjahr: mind. ${S.regeln ? S.regeln.halbjahresziel : 1} Einsatz pro Mitglied.` : "Noch keine Daten abgerufen.";
+  const of = (x) => `${fmt(x)}<span class="of">/ ${n}</span>`;
+  $("b-erfuellt").innerHTML = geladen ? of(k.erfuellt) : "–";
+  $("b-halbjahr").innerHTML = geladen ? of(k.halbjahr_erreicht) : "–";
+  $("b-ohne").textContent = geladen ? fmt(k.ohne_einsatz) : "–";
+  $("b-accounts").textContent = geladen ? d.alle_accounts.length : "–";
+  $("b-zweit").textContent = geladen ? fmt(k.zweitaccounts) : "–";
+  $("b-konflikt").textContent = geladen ? d.mitglieder.filter((m) => m.soll_konflikt).length : "–";
+  $("b-nok").textContent = geladen ? fmt(k.nok_summe) : "–";
+  $("b-dq").textContent = geladen ? d.hinweise.length : "–";
 
-function renderBericht(d) {
-  const k = d.kennzahlen || {};
-  const leer = k.mitglieder === undefined;
-
-  document.getElementById("bericht-meta").textContent = "Stand " + (d.stand || "–");
-
-  const pct = !leer && k.soll_summe > 0 ? (k.ist_summe / k.soll_summe) * 100 : 0;
-  const umfang = 263.9;
-  document.getElementById("ring-progress").setAttribute(
-    "stroke-dasharray", `${((pct / 100) * umfang).toFixed(1)} ${umfang}`);
-  document.getElementById("ring-pct").innerHTML = `${Math.round(pct)}&nbsp;%`;
-  document.getElementById("ring-sub").innerHTML = leer
-    ? "Noch keine Daten geladen."
-    : `${fmtNum(k.ist_summe)} geleistete von ${fmtNum(k.soll_summe)} geforderten Einsätzen.<br>` +
-      `Zwischenziel Halbjahr: mind. ${fmtNum(regelnAktuell?.halbjahresziel ?? 1)} Einsatz pro Mitglied.`;
-
-  document.getElementById("fact-erfuellt").textContent = leer ? "– / –" : `${k.erfuellt} / ${k.mitglieder}`;
-  document.getElementById("fact-halbjahr").textContent = leer ? "– / –" : `${k.halbjahr_erreicht} / ${k.mitglieder}`;
-  document.getElementById("fact-ohne-einsatz").textContent = leer ? "–" : fmtNum(k.ohne_einsatz);
-  document.getElementById("fact-zweitaccounts").textContent = leer ? "–" : fmtNum(k.zweitaccounts);
-  document.getElementById("fact-soll-konflikte").textContent =
-    leer ? "–" : fmtNum(mitgliederAktuell.filter((m) => m.soll_konflikt).length);
-  document.getElementById("fact-nok").textContent = leer ? "–" : fmtNum(k.nok_summe);
-  document.getElementById("fact-dq").textContent = leer ? "–" : fmtNum(k.hinweise);
-
-  renderGruppenBars(leer ? 0 : (k.mitglieder ? (k.halbjahr_erreicht / k.mitglieder) * 100 : 0));
-  renderWerLeistet(d.wer_leistet || {});
-
-  document.getElementById("saeumige-titel").textContent =
-    leer ? "· Auszug" : `· ${fmtNum(k.ohne_einsatz)} ${k.ohne_einsatz === 1 ? "Mitglied" : "Mitglieder"} ohne Einsatz, Auszug`;
-  const tbody = document.getElementById("saeumige-auszug");
-  tbody.innerHTML = "";
-  const saeumige = mitgliederAktuell.filter((m) => m.ist === 0).slice(0, 10);
-  if (!saeumige.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="leer">Keine Mitglieder ohne Einsatz.</td></tr>';
+  // Kategorie-Erfüllung nur mit Fairgate-Export
+  const ke = d.kategorie_erfuellung || [];
+  $("b-kategorie-card").hidden = ke.length === 0;
+  if (ke.length) {
+    const ges = ke.reduce((s, e) => s + e.gesamt, 0), err = ke.reduce((s, e) => s + e.erreicht, 0);
+    const schnitt = ges ? err / ges : 0;
+    $("b-kategorie-bars").innerHTML = ke.map((e) => {
+      const p = e.gesamt ? e.erreicht / e.gesamt : 0;
+      return `<div class="gbar"><span>${esc(e.kategorie)}</span><span class="track"><span class="fill ${p < schnitt ? "lo" : ""}" style="width:${Math.round(p * 100)}%"></span></span><span class="val">${e.erreicht} / ${e.gesamt} · ${Math.round(p * 100)} %</span></div>`;
+    }).join("") + `<div class="hintline">Vereinsschnitt: ${Math.round(schnitt * 100)} % der Mitglieder haben das Halbjahresziel erreicht.</div>`;
   }
-  for (const m of saeumige) {
-    const typen = [...new Set(m.accounts.map((a) => TYP_LABEL[a.typ] || a.typ))].join(", ");
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${esc(m.name)} <span class="fg">${esc(m.fg)}</span></td>` +
-      `<td>${esc((m.gruppen || []).join(", "))}</td>` +
-      `<td class="num">${fmtNum(m.soll)}</td><td class="num">${fmtNum(m.ist)}</td>` +
-      `<td class="fg">${esc(typen)}</td>`;
-    tbody.appendChild(tr);
-  }
+  // Wer leistet
+  const wer = d.wer_leistet || {}, total = Object.values(wer).reduce((s, v) => s + v, 0);
+  const reihenfolge = ["mitglied", "zweitaccount", "freiwillig", "unbekannt", "unklassifiziert"];
+  const labels = { mitglied: "Mitglieder", zweitaccount: "Zweitaccounts (Eltern)", freiwillig: "Freiwillige", unbekannt: "Unbekannte", unklassifiziert: "Unklassifiziert" };
+  $("b-wer-bars").innerHTML = geladen ? reihenfolge.filter((t) => t in wer || t !== "unklassifiziert").map((t) => {
+    const v = wer[t] || 0, p = total ? v / total : 0;
+    const cls = t === "unbekannt" && v > 0 ? "lo" : "n";
+    return `<div class="gbar"><span>${labels[t]}</span><span class="track"><span class="fill ${cls}" style="width:${Math.round(p * 100)}%"></span></span><span class="val">${v} · ${Math.round(p * 100)} %</span></div>`;
+  }).join("") + (wer.unbekannt ? `<div class="hintline">Unbekannte sollten 0 Einsätze haben — Umteilung siehe Datenqualität.</div>` : "") : `<div class="empty">Noch keine Daten.</div>`;
+  // Säumige
+  const saeumige = d.mitglieder.filter((m) => statusVon(m) === "saeumig").sort((a, b) => vergleich(a.name, b.name));
+  $("b-saeumige-sub").textContent = S.sicht === "saison"
+    ? `${saeumige.length} Mitglieder ohne Einsatz. Vollständige Liste über «Säumigen-CSV».`
+    : `${saeumige.length} Mitglieder unter dem Halbjahresziel. Vollständige Liste über «Säumigen-CSV».`;
+  $("b-saeumige-body").innerHTML = saeumige.length ? saeumige.slice(0, 15).map((m) => `
+    <tr><td><span class="name">${esc(m.name)}</span> <span class="fgtag">${esc(m.fg)}</span></td><td class="sub">${esc(m.gruppen.join(", "))}</td>
+    <td class="r num">${fmt(m.soll)}</td><td class="r num">${fmt(m.ist)}</td><td class="sub">${m.accounts.length > 1 ? `${m.accounts.length} verknüpft` : "1"}</td></tr>`).join("")
+    + (saeumige.length > 15 ? `<tr><td colspan="5" class="sub">… und ${saeumige.length - 15} weitere — siehe CSV.</td></tr>` : "")
+    : `<tr><td colspan="5" class="sub">${geladen ? "Niemand säumig — alle im Soll." : "Noch keine Daten."}</td></tr>`;
 }
 
-function renderGruppenBars(vereinsschnitt) {
-  const gruppen = {};
-  for (const m of mitgliederAktuell) {
-    for (const g of m.gruppen || []) {
-      gruppen[g] = gruppen[g] || { total: 0, erreicht: 0 };
-      gruppen[g].total++;
-      if (m.status_halbjahr === "erfuellt") gruppen[g].erreicht++;
-    }
-  }
-  const el = document.getElementById("gruppen-bars");
-  const namen = Object.keys(gruppen).sort((a, b) => a.localeCompare(b, "de-CH"));
-  if (!namen.length) {
-    el.innerHTML = '<p class="leer">Keine Gruppendaten vorhanden.</p>';
-    return;
-  }
-  el.innerHTML = namen.map((g) => {
-    const { total, erreicht } = gruppen[g];
-    const pct = total > 0 ? (erreicht / total) * 100 : 0;
-    const hi = pct >= vereinsschnitt ? " hi" : "";
-    return `<div class="gbar"><span>${esc(g)}</span>` +
-      `<span class="track"><span class="fill${hi}" style="width:${pct}%"></span></span>` +
-      `<span class="val">${erreicht} / ${total} · ${Math.round(pct)} %</span></div>`;
-  }).join("");
-}
-
-function renderWerLeistet(wer) {
-  const unbekannt = (wer.unbekannt || 0) + (wer.unklassifiziert || 0);
-  const kategorien = [
-    { label: "Mitglieder", n: wer.mitglied || 0 },
-    { label: "Zweitaccounts (Eltern)", n: wer.zweitaccount || 0 },
-    { label: "Freiwillige", n: wer.freiwillig || 0 },
-    { label: "Unbekannte", n: unbekannt },
-  ];
-  const gesamt = kategorien.reduce((s, k) => s + k.n, 0);
-  const el = document.getElementById("wer-leistet-bars");
-  el.innerHTML = kategorien.map((k) => {
-    const pct = gesamt > 0 ? (k.n / gesamt) * 100 : 0;
-    const hi = k.label === "Unbekannte" ? "" : " hi";
-    return `<div class="gbar"><span>${esc(k.label)}</span>` +
-      `<span class="track"><span class="fill${hi}" style="width:${pct}%"></span></span>` +
-      `<span class="val">${fmtNum(k.n)} · ${Math.round(pct)} %</span></div>`;
-  }).join("");
-  const hinweisEl = document.getElementById("wer-leistet-hinweis");
-  hinweisEl.textContent = unbekannt > 0
-    ? `Unbekannte sollten 0 Einsätze haben — ${fmtNum(unbekannt)} Einsätze: → Datenqualität, dort zur Umteilung gelistet.`
-    : "";
-}
-
-// -------------------------------------------------------------- Abgleich ----
-
-function aktualisiereAbgleichHelferStatus(d) {
-  const el = document.getElementById("abgleich-helfer-status");
-  const k = d.kennzahlen || {};
-  if (k.mitglieder === undefined) {
-    el.textContent = "Noch keine Daten geladen.";
-  } else {
-    el.innerHTML = `<span class="tick">✓</span> Automatisch über die API — ` +
-      `${fmtNum(k.mitglieder)} Mitglieder erfasst${d.stand ? ", Stand " + esc(d.stand) : ""}`;
-  }
-}
-
+// ------------------------------------------------------------------ Abgleich ----
 async function fairgateHochladen(datei) {
-  let r;
+  if (!datei) return;
+  const dz = $("dropzone");
+  dz.innerHTML = ic("refresh", "spin") + `<br>Wird geprüft: <b>${esc(datei.name)}</b> …`;
   try {
-    r = await fetch("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
-  } catch (netzwerkFehler) {
-    const meldung = "Server nicht erreichbar (/api/fairgate) — läuft das Cockpit noch?";
-    zeigeFehler("fairgate", meldung);
-    document.getElementById("abgleich-ergebnis").innerHTML =
-      `<p class="resultlead">Fehler: ${esc(meldung)}</p>`;
-    throw new Error(meldung);
-  }
-  const d = await r.json();
-  if (!r.ok) {
-    zeigeFehler("fairgate", d.fehler);
-    document.getElementById("abgleich-ergebnis").innerHTML =
-      `<p class="resultlead">Fehler: ${esc(d.fehler)}</p>`;
-    throw new Error(d.fehler);
-  }
-  zeigeFehler("fairgate", "");
-  renderAbgleich(d);
-  ladeProtokoll();
-  return d;
-}
-
-function artifactCard(titel, anzahl, beschreibung, pfad) {
-  return `<div class="artifact"><div class="count num">${anzahl}</div><h3>${esc(titel)}</h3>` +
-    `<p>${esc(beschreibung)}</p>` +
-    `<button type="button" class="cta" data-path="${esc(pfad)}">Pfad kopieren</button>` +
-    `<div class="path">${esc(pfad)}</div></div>`;
-}
-
-function renderAbgleich(d) {
-  const navBadge = document.getElementById("nav-abgleich");
-  const gesamt = (d.neueintritte || 0) + (d.korrekturen || 0) + (d.handarbeit || []).length;
-  navBadge.hidden = false;
-  navBadge.textContent = gesamt;
-
-  let html = `<p class="resultlead"><b>${esc(d.zusammenfassung)}</b></p>`;
-  if ((d.duplikat_warnungen || []).length) {
-    html += `<p class="hintline">${d.duplikat_warnungen.length} Duplikat-Warnung(en) — ` +
-      "nicht importiert, siehe Handarbeits-Liste.</p>";
-  }
-  html += '<div class="artifacts">';
-  html += artifactCard("Handarbeits-Liste", (d.handarbeit || []).length,
-    "Zuerst im Portal von Hand abarbeiten (Schlüssel-Änderungen, dann Austritte). Abhakbar, druckbar.",
-    d.dateien.liste);
-  html += artifactCard("Import-Datei (Excel)", (d.neueintritte || 0) + (d.korrekturen || 0),
-    "Danach im Portal hochladen: Neueintritte und Zielwert-Korrekturen.", d.dateien.import);
-  html += artifactCard("Klärliste", (d.klaerliste || []).length,
-    "Mitglieder ohne erreichbare E-Mail — in Fairgate nachtragen.", d.dateien.liste);
-  html += "</div>";
-
-  const el = document.getElementById("abgleich-ergebnis");
-  el.innerHTML = html;
-  el.querySelectorAll("button[data-path]").forEach((btn) => {
-    btn.addEventListener("click", () => kopierePfad(btn.dataset.path));
-  });
-}
-
-async function kopierePfad(pfad) {
-  try {
-    await navigator.clipboard.writeText(pfad);
-    zeigeHinweis("Pfad kopiert: " + pfad);
+    const d = await holeJson("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
+    zeigeFehler("fairgate", null);
+    dz.innerHTML = ic("check") + `<br><b>${esc(datei.name)}</b> geladen · ${esc(String(d.geprueft ?? ""))}<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
+    renderAbgleich(d);
+    const offen = d.handarbeit.length + d.klaerliste.length + d.duplikat_warnungen.length;
+    $("nav-n-abgleich").textContent = offen || "";
+    toast("Abgleich abgeschlossen — " + d.zusammenfassung);
+    ladeProtokoll(); ladeStand();
   } catch (e) {
-    zeigeHinweis("Pfad: " + pfad);
+    zeigeFehler("fairgate", e.message);
+    dz.innerHTML = ic("alert") + `<br><b>Datei abgewiesen.</b><span class="hint">${esc(e.message)}</span><span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
   }
 }
-
-// --------------------------------------------------------------- Regeln ----
-
-async function ladeRegeln() {
-  try {
-    regelnAktuell = await holeJson("/api/regeln");
-    zeigeFehler("regeln-transport", "");
-    befuelleRegelnFormular();
-  } catch (err) {
-    zeigeFehler("regeln-transport", "Regeln konnten nicht geladen werden: " + err.message);
-  }
+function renderAbgleich(d) {
+  const imp = basename(d.dateien.import), liste = basename(d.dateien.liste);
+  const nImport = d.neueintritte + d.korrekturen;
+  const warn = [
+    ...(d.unbekannte_kategorien || []).map((w) => ({ t: w, k: "Unbekannte Kategorie" })),
+    ...(d.duplikat_warnungen || []).map((w) => ({ t: w, k: "Duplikat-Warnung" })),
+  ];
+  $("abgleich-ergebnis").innerHTML = `
+    <p class="lead"><b>${esc(d.zusammenfassung)}</b></p>
+    <div class="artifacts">
+      <div class="artifact"><div class="count num">${d.handarbeit.length}</div><h3>Handarbeits-Liste</h3>
+        <p>Zuerst im Portal von Hand erledigen: Schlüssel-Änderungen, Austritte, Feld-Leerungen. Abhakbar und druckbar.</p>
+        <div class="row"><a class="btn" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file")}Öffnen</a></div></div>
+      <div class="artifact"><div class="count num">${nImport}</div><h3>Import-Datei</h3>
+        <p>Danach im Portal hochladen (Helfende → Import): ${d.neueintritte} Neueintritte, ${d.korrekturen} Korrekturen. Leere Zellen überschreiben nichts.</p>
+        <div class="row"><a class="btn" href="${ausgabeLink(imp)}">${ic("download")}${esc(imp)}</a></div></div>
+      <div class="artifact"><div class="count num">${d.klaerliste.length}</div><h3>Klärliste</h3>
+        <p>In Fairgate nachtragen (fehlende E-Mail, belegtes Bemerkungsfeld u. ä.). Steht auch in der Handarbeits-Liste.</p>
+        ${d.klaerliste.length ? `<ul class="warnlist">${d.klaerliste.slice(0, 5).map((t) => `<li>${ic("info", "sm")}<span>${esc(t)}</span></li>`).join("")}${d.klaerliste.length > 5 ? `<li class="sub">… ${d.klaerliste.length - 5} weitere in der Liste</li>` : ""}</ul>` : ""}</div>
+    </div>
+    ${warn.length ? `<ul class="warnlist">${warn.map((w) => `<li>${ic("alert", "sm")}<span><b>${esc(w.k)}:</b> ${esc(w.t)}</span></li>`).join("")}</ul>` : ""}
+    <p class="hintline">Reihenfolge ist Pflicht: erst die Handarbeits-Liste abarbeiten, dann die Import-Datei hochladen — sonst entstehen Duplikate. Dateien liegen im Ordner «Ausgabe».</p>`;
 }
 
-function kategorieZeileHinzufuegen(k) {
-  k = k || { name: "", pflichtig: true, zielwert: 0, portal_gruppe: "" };
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td><input type="text" class="rk-name" value="${esc(k.name)}"></td>
-    <td style="text-align:center"><input type="checkbox" class="rk-pflichtig" ${k.pflichtig ? "checked" : ""}></td>
-    <td class="num"><input type="number" min="0" class="rk-zielwert" value="${Number(k.zielwert) || 0}"></td>
-    <td><input type="text" class="rk-gruppe" value="${esc(k.portal_gruppe)}"></td>
-    <td><button type="button" class="rmrow" title="Zeile entfernen">✕</button></td>`;
-  tr.querySelector(".rmrow").addEventListener("click", () => tr.remove());
-  document.getElementById("regeln-kategorien").appendChild(tr);
+// ------------------------------------------------------------------ Datenqualität ----
+function renderDQ() {
+  const d = S.daten, el = $("dq-gruppen");
+  $("dq-meta").textContent = d.hinweise.length ? `${d.hinweise.length} offene Hinweise · Stand ${d.stand}` : (d.mitglieder.length ? "Keine Hinweise — Datenbestand sauber." : "Wird bei jedem Abruf geprüft");
+  if (!d.hinweise.length) { el.innerHTML = `<div class="card"><div class="empty"><b>${d.mitglieder.length ? "Alles sauber" : "Noch keine Daten"}</b>${d.mitglieder.length ? "Keine Regelverstösse im aktuellen Bestand." : "Nach dem ersten Abruf erscheinen hier die Prüfergebnisse."}</div></div>`; return; }
+  const gruppen = ["kritisch", "warnung", "hinweis"].map((s) => ({ s, liste: d.hinweise.filter((h) => h.schweregrad === s) })).filter((g) => g.liste.length);
+  el.innerHTML = gruppen.map((g) => `
+    <div class="dqgroup"><h2><span class="dot" style="background:${SCHWERE[g.s].farbe}"></span>${SCHWERE[g.s].titel} <span class="sub">· ${g.liste.length}</span></h2>
+      ${g.liste.map((h) => `<div class="card dqcard ${SCHWERE[g.s].cls}"><span class="code ${SCHWERE[g.s].cls}">${esc(h.code)}</span><div class="text">${esc(h.text)}</div>
+        ${h.betroffene.length ? `<div class="betroffene">${h.betroffene.map(betroffenChip).join("")}</div>` : ""}</div>`).join("")}
+    </div>`).join("");
+}
+function betroffenChip(b) {
+  const d = S.daten;
+  const fgMatch = String(b).match(/FG-\d+/);
+  const name = nameAus(b);
+  let m = null;
+  if (fgMatch) m = d.mitglieder.find((x) => x.fg === fgMatch[0]);
+  if (!m) m = d.mitglieder.find((x) => x.name === name || x.accounts.some((a) => a.name === name));
+  if (m) return `<button class="pchip" data-fg="${esc(m.fg)}" title="Im Kontingent anzeigen">${ic("chev", "sm")}${esc(b)}</button>`;
+  const a = d.alle_accounts.find((x) => x.name === name);
+  if (a) return `<button class="pchip" data-id="${a.id}" data-name="${esc(a.name)}" title="Bei allen Helfenden anzeigen">${ic("users", "sm")}${esc(b)}</button>`;
+  return `<span class="pchip static">${esc(b)}</span>`;
 }
 
-function befuelleRegelnFormular() {
-  const tbody = document.getElementById("regeln-kategorien");
-  tbody.innerHTML = "";
-  (regelnAktuell.kategorien || []).forEach((k) => kategorieZeileHinzufuegen(k));
-  document.getElementById("regeln-altersgrenze").value = regelnAktuell.altersgrenze;
-  document.getElementById("regeln-halbjahresziel").value = regelnAktuell.halbjahresziel;
+// ------------------------------------------------------------------ Regeln ----
+function befuelleRegeln() {
+  const r = S.regeln; if (!r) return;
+  $("regeln-kategorien").innerHTML = r.kategorien.map(kategorieZeile).join("");
+  $("regel-altersgrenze").value = r.altersgrenze;
+  $("regel-halbjahr").value = r.halbjahresziel;
+  setSicht(S.sicht);
 }
-
-async function speichereRegeln(ev) {
-  ev.preventDefault();
-  const zeilen = [...document.querySelectorAll("#regeln-kategorien tr")];
-  const kategorien = zeilen.map((tr) => ({
-    name: tr.querySelector(".rk-name").value.trim(),
-    pflichtig: tr.querySelector(".rk-pflichtig").checked,
-    zielwert: Number(tr.querySelector(".rk-zielwert").value) || 0,
-    portal_gruppe: tr.querySelector(".rk-gruppe").value.trim(),
+function kategorieZeile(k = { name: "", pflichtig: true, zielwert: 2, portal_gruppe: "Mitglied" }) {
+  return `<tr>
+    <td><input type="text" class="k-name" value="${esc(k.name)}" placeholder="z. B. Aktivmitglied"></td>
+    <td><input type="checkbox" class="k-pflichtig" ${k.pflichtig ? "checked" : ""}></td>
+    <td><input type="number" class="k-ziel" value="${Number(k.zielwert) || 0}" min="0" max="50"></td>
+    <td><input type="text" class="k-gruppe" value="${esc(k.portal_gruppe)}" placeholder="Mitglied"></td>
+    <td><button class="btn ghost icon k-del" title="Zeile entfernen" aria-label="Zeile entfernen">${ic("x")}</button></td></tr>`;
+}
+async function speichereRegeln() {
+  const kategorien = [...document.querySelectorAll("#regeln-kategorien tr")].map((tr) => ({
+    name: tr.querySelector(".k-name").value.trim(),
+    pflichtig: tr.querySelector(".k-pflichtig").checked,
+    zielwert: Number(tr.querySelector(".k-ziel").value) || 0,
+    portal_gruppe: tr.querySelector(".k-gruppe").value.trim(),
   })).filter((k) => k.name);
-  const payload = {
-    kategorien,
-    altersgrenze: Number(document.getElementById("regeln-altersgrenze").value) || 0,
-    halbjahresziel: Number(document.getElementById("regeln-halbjahresziel").value) || 0,
-  };
-  const statusEl = document.getElementById("regeln-status");
-  statusEl.textContent = "Speichert …";
+  const body = { kategorien, altersgrenze: Number($("regel-altersgrenze").value) || 16, halbjahresziel: Number($("regel-halbjahr").value) || 1 };
   try {
-    const r = await fetch("/api/regeln", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.fehler || "Fehler beim Speichern.");
-    regelnAktuell = payload;
-    statusEl.textContent = "Gespeichert.";
-    zeigeFehler("regeln-speichern", "");
-    zeigeHinweis("Regeln gespeichert.");
-    renderTabelle();
-    if (letzterStand) renderBericht(letzterStand);
-  } catch (err) {
-    statusEl.textContent = "Fehler: " + err.message;
-    zeigeFehler("regeln-speichern", err.message);
-  }
+    await holeJson("/api/regeln", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    zeigeFehler("regeln-speichern", null);
+    toast("Regeln gespeichert.");
+    await ladeRegeln(); await ladeStand();
+  } catch (e) { zeigeFehler("regeln-speichern", e.message); }
 }
 
-// ------------------------------------------------------------- Protokoll ----
-
-async function ladeProtokoll() {
-  try {
-    const liste = await holeJson("/api/protokoll");
-    zeigeFehler("protokoll-transport", "");
-    renderProtokoll(liste);
-  } catch (err) {
-    zeigeFehler("protokoll-transport", "Protokoll konnte nicht geladen werden: " + err.message);
-  }
-}
-
+// ------------------------------------------------------------------ Protokoll ----
 function formatZeit(iso) {
-  const dt = new Date(iso);
-  if (isNaN(dt)) return iso;
-  const p = (n) => String(n).padStart(2, "0");
-  return `${p(dt.getDate())}.${p(dt.getMonth() + 1)}.${dt.getFullYear()} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+  const d = new Date(iso); if (isNaN(d)) return esc(iso);
+  return d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
 }
-
-function beschreibeEintrag(e) {
-  if (e.aktion === "api-abruf") return `API-Abruf: ${e.accounts} Accounts`;
-  if (e.aktion === "abgleich") {
-    return `Quartals-Abgleich: ${e.neueintritte} Neueintritte, ${e.korrekturen} Korrekturen, ` +
-      `${e.handarbeit} Handarbeit · Dateien: ${(e.dateien || []).join(", ")}`;
+function beschreibe(e) {
+  const dateien = (e.dateien || []).map((f) => `<a href="${ausgabeLink(f)}" target="_blank" rel="noopener">${esc(f)}</a>`).join(", ");
+  switch (e.aktion) {
+    case "api-abruf": return { a: "API-Abruf", d: `${e.accounts} Accounts${e.hinweise != null ? ` · ${e.hinweise} Hinweise` : ""}` };
+    case "abgleich": return { a: "Quartals-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${dateien ? " · " + dateien : ""}` };
+    case "saeumigen-csv": return { a: "Säumigen-CSV", d: `${e.anzahl} Einträge (${e.sicht === "halbjahr" ? "Halbjahresziel" : "Saison-Soll"})${dateien ? " · " + dateien : ""}` };
+    case "gesamtexport": return { a: "Excel-Gesamtexport", d: `${e.anzahl} Mitglieder${dateien ? " · " + dateien : ""}` };
+    default: return { a: esc(e.aktion), d: dateien };
   }
-  if (e.aktion === "saeumigen-csv") {
-    return `Säumigen-CSV (${e.sicht}): ${e.anzahl} Mitglieder · Datei ${(e.dateien || []).join(", ")}`;
-  }
-  const rest = Object.entries(e).filter(([k]) => !["zeit", "aktion"].includes(k))
-    .map(([k, v]) => `${k}: ${v}`).join(", ");
-  return `${e.aktion}${rest ? " — " + rest : ""}`;
 }
-
 function renderProtokoll(liste) {
-  const ul = document.getElementById("protokoll-liste");
-  ul.innerHTML = "";
-  if (!liste.length) {
-    ul.innerHTML = '<li class="leer">Noch keine Einträge.</li>';
-    return;
-  }
-  for (const e of liste) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="d">${esc(formatZeit(e.zeit))}</span><span>${esc(beschreibeEintrag(e))}</span>`;
-    ul.appendChild(li);
-  }
+  const el = $("protokoll-liste");
+  if (!liste.length) { el.innerHTML = `<li><div class="empty" style="grid-column:1/-1"><b>Noch keine Einträge</b>Abrufe, Abgleiche und Exporte erscheinen hier chronologisch.</div></li>`; return; }
+  el.innerHTML = liste.map((e) => { const b = beschreibe(e); return `<li><span class="z">${formatZeit(e.zeit)}</span><div><div class="a">${b.a}</div><div class="d">${b.d}</div></div></li>`; }).join("");
 }
 
-// ------------------------------------------------------------ Säumige-CSV ----
-
+// ------------------------------------------------------------------ Exporte ----
 async function saeumigenCsv() {
   try {
-    const r = await fetch(`/api/export/saeumige?sicht=${encodeURIComponent(sichtAktuell)}`, { method: "POST" });
-    const d = await r.json();
-    if (!r.ok) { zeigeFehler("saeumigen-csv", d.fehler || "Fehler beim CSV-Export."); return; }
-    zeigeFehler("saeumigen-csv", "");
-    zeigeHinweis(`Säumigen-CSV erzeugt: ${d.anzahl} Mitglieder → ${d.datei}`);
+    const d = await holeJson(`/api/export/saeumige?sicht=${encodeURIComponent(S.sicht)}`, { method: "POST" });
+    zeigeFehler("saeumigen-csv", null);
+    toast(`Säumigen-CSV erstellt: ${d.anzahl} Einträge.`, { href: ausgabeLink(d.datei), text: basename(d.datei) });
     ladeProtokoll();
-  } catch (err) {
-    zeigeFehler("saeumigen-csv", "Säumigen-CSV fehlgeschlagen: " + String(err.message || err));
-  }
+  } catch (e) { zeigeFehler("saeumigen-csv", e.message); }
 }
-
 async function gesamtexport() {
   try {
-    const r = await fetch("/api/export/gesamt", { method: "POST" });
-    const d = await r.json();
-    if (!r.ok) { zeigeFehler("gesamtexport", d.fehler || "Fehler beim Excel-Gesamtexport."); return; }
-    zeigeFehler("gesamtexport", "");
-    zeigeHinweis(`Excel-Gesamtexport erzeugt: ${d.anzahl} Mitglieder → ${d.datei}`);
+    const d = await holeJson("/api/export/gesamt", { method: "POST" });
+    zeigeFehler("gesamtexport", null);
+    toast(`Excel-Gesamtexport erstellt: ${d.anzahl} Mitglieder, drei Blätter.`, { href: ausgabeLink(d.datei), text: basename(d.datei) });
     ladeProtokoll();
-  } catch (err) {
-    zeigeFehler("gesamtexport", "Excel-Gesamtexport fehlgeschlagen: " + String(err.message || err));
-  }
+  } catch (e) { zeigeFehler("gesamtexport", e.message); }
 }
 
-// -------------------------------------------------------------- Wiring ----
-
-document.querySelectorAll(".navitem").forEach((t) => t.addEventListener("click", () => {
-  document.querySelectorAll(".navitem").forEach((x) => x.removeAttribute("aria-current"));
-  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-  t.setAttribute("aria-current", "page");
-  document.getElementById(t.dataset.panel).classList.add("active");
-  if (t.dataset.panel === "p-log") ladeProtokoll();
-}));
-
-document.querySelectorAll("#p-kontingent .chips .chip[data-filter]").forEach((c) => c.addEventListener("click", () => {
-  document.querySelectorAll("#p-kontingent .chips .chip[data-filter]").forEach((x) => x.setAttribute("aria-pressed", "false"));
-  c.setAttribute("aria-pressed", "true");
-  filterAktuell = c.dataset.filter;
-  renderTabelle();
-}));
-
-document.getElementById("suche-mitglieder").addEventListener("input", (e) => {
-  sucheAktuell = e.target.value;
-  renderTabelle();
-});
-
-document.getElementById("sicht-saison").addEventListener("click", () => setSicht("saison"));
-document.getElementById("sicht-halbjahr").addEventListener("click", () => setSicht("halbjahr"));
-
-document.getElementById("tab-mitglieder").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-toggle]");
-  if (!b) return;
-  const row = document.getElementById(b.dataset.toggle);
-  const open = row.hasAttribute("hidden");
-  row.toggleAttribute("hidden", !open);
-  b.setAttribute("aria-expanded", String(open));
-  b.textContent = (open ? "▾ " : "▸ ") + b.dataset.count;
-});
-
-document.getElementById("btn-abruf").addEventListener("click", abrufen);
-document.getElementById("btn-print").addEventListener("click", () => window.print());
-document.getElementById("btn-print-kontingent").addEventListener("click", () => window.print());
-document.getElementById("btn-saeumige-csv").addEventListener("click", saeumigenCsv);
-document.getElementById("btn-saeumige-csv-bericht").addEventListener("click", saeumigenCsv);
-document.getElementById("btn-gesamtexport").addEventListener("click", gesamtexport);
-
-document.getElementById("fg-datei-waehlen").addEventListener("click", () =>
-  document.getElementById("fg-datei-input").click());
-
-document.getElementById("fg-datei-input").addEventListener("change", async (e) => {
-  const datei = e.target.files[0];
-  if (!datei) return;
-  const status = document.getElementById("fg-datei-status");
-  status.innerHTML = `<span>⏳ ${esc(datei.name)} wird hochgeladen und abgeglichen …</span>`;
-  try {
-    const d = await fairgateHochladen(datei);
-    status.innerHTML = `<span class="tick">✓</span> ${esc(datei.name)} · ${esc(d.zusammenfassung)} ` +
-      `<button class="swap" id="fg-datei-waehlen">andere Datei wählen</button>`;
-  } catch (err) {
-    status.innerHTML = `<span>✕ ${esc(datei.name)} — Fehler beim Abgleich</span> ` +
-      `<button class="swap" id="fg-datei-waehlen">andere Datei wählen</button>`;
-  }
-  document.getElementById("fg-datei-waehlen").addEventListener("click", () =>
-    document.getElementById("fg-datei-input").click());
-  e.target.value = "";
-});
-
-document.getElementById("regeln-kategorie-hinzu").addEventListener("click", () => kategorieZeileHinzufuegen());
-document.getElementById("regeln-formular").addEventListener("submit", speichereRegeln);
-
+// ------------------------------------------------------------------ Start ----
 document.addEventListener("DOMContentLoaded", async () => {
-  // Jeder Schritt fängt seine eigenen Fehler bereits intern ab (siehe
-  // ladeRegeln/ladeStand/ladeProtokoll) und zeigt sie sichtbar an. Zusätzlich
-  // hier je Schritt try/catch: ein Fehlschlag darf die übrigen Startaufrufe
-  // nie stumm verhindern, auch nicht bei einem unerwarteten Absturz.
-  try {
-    setSicht("saison");
-  } catch (err) {
-    zeigeFehler("start-sicht", "Start fehlgeschlagen (Ansicht): " + err.message);
-  }
-  try {
-    await ladeRegeln();
-  } catch (err) {
-    zeigeFehler("regeln-transport", "Regeln konnten nicht geladen werden: " + err.message);
-  }
-  try {
-    await ladeStand();
-  } catch (err) {
-    zeigeFehler("stand-transport", "Stand konnte nicht geladen werden: " + err.message);
-  }
-  try {
-    await ladeProtokoll();
-  } catch (err) {
-    zeigeFehler("protokoll-transport", "Protokoll konnte nicht geladen werden: " + err.message);
-  }
+  document.querySelectorAll(".navitem").forEach((b) => b.addEventListener("click", () => zeigePanel(b.dataset.panel)));
+  $("btn-abrufen").addEventListener("click", abrufen);
+  document.querySelectorAll(".seg [data-sicht]").forEach((b) => b.addEventListener("click", () => setSicht(b.dataset.sicht)));
+
+  // Kontingent: Chips, Suche, Sortierung, Zeilen
+  document.querySelectorAll("#chips-kontingent .chip").forEach((c) => c.addEventListener("click", () => {
+    S.k.filter = c.dataset.filter;
+    document.querySelectorAll("#chips-kontingent .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderTabelleK();
+  }));
+  $("suche-kontingent").addEventListener("input", (e) => { S.k.suche = e.target.value; renderTabelleK(); });
+  bindeSort("tab-mitglieder", S.k.sort, renderTabelleK);
+  $("tab-mitglieder-body").addEventListener("click", (e) => {
+    if (e.target.closest("a")) return;
+    const tr = e.target.closest("tr.row"); if (tr) toggleZeile(tr.dataset.fg);
+  });
+  $("tab-mitglieder-body").addEventListener("keydown", (e) => {
+    const tr = e.target.closest("tr.row");
+    if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleZeile(tr.dataset.fg); }
+  });
+  $("btn-saeumige-csv").addEventListener("click", saeumigenCsv);
+  $("btn-saeumige-csv-2").addEventListener("click", saeumigenCsv);
+  $("btn-gesamtexport").addEventListener("click", gesamtexport);
+  $("btn-gesamtexport-2").addEventListener("click", gesamtexport);
+  ["btn-print-kontingent", "btn-print-helfende", "btn-print-bericht"].forEach((id) => $(id).addEventListener("click", () => window.print()));
+
+  // Alle Helfenden
+  document.querySelectorAll("#chips-helfende .chip").forEach((c) => c.addEventListener("click", () => {
+    S.h.filter = c.dataset.typ;
+    document.querySelectorAll("#chips-helfende .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderTabelleH();
+  }));
+  $("suche-helfende").addEventListener("input", (e) => { S.h.suche = e.target.value; renderTabelleH(); });
+  bindeSort("tab-helfende", S.h.sort, renderTabelleH);
+
+  // Datenqualität: Sprungmarken
+  $("dq-gruppen").addEventListener("click", (e) => {
+    const b = e.target.closest("button.pchip"); if (!b) return;
+    if (b.dataset.fg) springeZuMitglied(b.dataset.fg); else if (b.dataset.id) springeZuHelfer(b.dataset.id, b.dataset.name);
+  });
+
+  // Abgleich: Drop-Zone
+  const dz = $("dropzone"), input = $("datei-input");
+  dz.addEventListener("click", () => input.click());
+  dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop", (e) => fairgateHochladen(e.dataTransfer.files[0]));
+  input.addEventListener("change", () => { fairgateHochladen(input.files[0]); input.value = ""; });
+
+  // Regeln
+  $("btn-kategorie-plus").addEventListener("click", () => $("regeln-kategorien").insertAdjacentHTML("beforeend", kategorieZeile()));
+  $("regeln-kategorien").addEventListener("click", (e) => { const b = e.target.closest(".k-del"); if (b) b.closest("tr").remove(); });
+  $("btn-regeln-speichern").addEventListener("click", speichereRegeln);
+
+  // Start: jeder Schritt fängt seine Fehler selbst (Startkette bricht nie still ab)
+  try { setSicht("saison"); } catch (e) { zeigeFehler("start-sicht", e.message); }
+  await ladeRegeln();
+  await ladeStand();
+  await ladeProtokoll();
 });

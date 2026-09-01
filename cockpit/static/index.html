@@ -1,404 +1,561 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Helfer-Cockpit 2</title>
 <style>
+  /* ---------- Schriften (lokal, offline) ---------- */
+  @font-face{font-family:"Archivo";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/Archivo-500.woff2) format("woff2")}
+  @font-face{font-family:"Archivo";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/Archivo-600.woff2) format("woff2")}
+  @font-face{font-family:"Archivo";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/Archivo-700.woff2) format("woff2")}
+  @font-face{font-family:"Archivo";font-style:normal;font-weight:800;font-display:swap;src:url(/static/fonts/Archivo-800.woff2) format("woff2")}
+  @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/IBMPlexSans-400.woff2) format("woff2")}
+  @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/IBMPlexSans-500.woff2) format("woff2")}
+  @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/IBMPlexSans-600.woff2) format("woff2")}
+
+  /* ---------- Farbsystem ---------- */
   :root{
-    --bg:#F4F4F2; --surface:#FFFFFF; --surface2:#ECECE9;
-    --ink:#1C1D1F; --muted:#6C6E70; --border:#E0E0DC; --border-strong:#C4C5C2;
-    --red:#D8232A; --red-ink:#B01E24; --red-soft:#FBE7E7;
-    --rail:#141517; --rail-ink:#F2F2F2; --rail-muted:#9A9DA1; --rail-line:#2A2C2F; --rail-active:#232528;
-    --ok:#2F7D4F; --ok-soft:#E4F0E8; --warn:#A8720F; --warn-soft:#F6ECD6;
-    --track:#E4E3DE;
+    --bg:#F5F5F3; --surface:#FFFFFF; --surface2:#EEEEEB; --surface3:#E6E6E2;
+    --ink:#1B1C1E; --ink2:#3A3C40; --muted:#67696D; --border:#E2E2DE; --border-strong:#C9CAC6;
+    --red:#D8232A; --red-ink:#B01E24; --red-soft:#FBE8E8;
+    --ok:#2E7D4E; --ok-soft:#E3F0E7; --warn:#A9720E; --warn-soft:#F6ECD5;
+    --info:#2F5FA8; --info-soft:#E6EDF8; --track:#E5E4DF;
+    --rail:#141517; --rail-ink:#F2F2F2; --rail-muted:#9A9DA1; --rail-line:#26282B; --rail-active:#222427;
+    --btn:#1B1C1E; --btn-ink:#FFFFFF;
+    --display:"Archivo","IBM Plex Sans",system-ui,sans-serif;
+    --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+    --r:12px; --r-sm:8px;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#131416; --surface:#1C1E21; --surface2:#25272B;
-      --ink:#ECEDEE; --muted:#9DA0A3; --border:#313438; --border-strong:#4A4D52;
-      --red:#F0625F; --red-ink:#F58B88; --red-soft:#3A2224;
-      --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#232528; --rail-active:#1D1F22;
-      --ok:#6FBE8E; --ok-soft:#213829; --warn:#D8A44C; --warn-soft:#3A3120;
-      --track:#2E3033;
+      --bg:#131416; --surface:#1B1D20; --surface2:#24262A; --surface3:#2C2F34;
+      --ink:#ECEDEE; --ink2:#C9CBCE; --muted:#9A9DA2; --border:#2F3237; --border-strong:#484C52;
+      --red:#EF5F5C; --red-ink:#F58B88; --red-soft:#3A2224;
+      --ok:#6FBE8E; --ok-soft:#1F3628; --warn:#D9A54D; --warn-soft:#3A3120;
+      --info:#7FA6E6; --info-soft:#1E2A3D; --track:#2E3034;
+      --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#212326; --rail-active:#1C1E21;
+      --btn:#ECEDEE; --btn-ink:#131416;
     }
   }
   :root[data-theme="dark"]{
-    --bg:#131416; --surface:#1C1E21; --surface2:#25272B;
-    --ink:#ECEDEE; --muted:#9DA0A3; --border:#313438; --border-strong:#4A4D52;
-    --red:#F0625F; --red-ink:#F58B88; --red-soft:#3A2224;
-    --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#232528; --rail-active:#1D1F22;
-    --ok:#6FBE8E; --ok-soft:#213829; --warn:#D8A44C; --warn-soft:#3A3120;
-    --track:#2E3033;
+    --bg:#131416; --surface:#1B1D20; --surface2:#24262A; --surface3:#2C2F34;
+    --ink:#ECEDEE; --ink2:#C9CBCE; --muted:#9A9DA2; --border:#2F3237; --border-strong:#484C52;
+    --red:#EF5F5C; --red-ink:#F58B88; --red-soft:#3A2224;
+    --ok:#6FBE8E; --ok-soft:#1F3628; --warn:#D9A54D; --warn-soft:#3A3120;
+    --info:#7FA6E6; --info-soft:#1E2A3D; --track:#2E3034;
+    --rail:#0C0D0E; --rail-ink:#F2F2F2; --rail-muted:#8B8E92; --rail-line:#212326; --rail-active:#1C1E21;
+    --btn:#ECEDEE; --btn-ink:#131416;
   }
+
+  /* ---------- Basis ---------- */
   *{box-sizing:border-box}
-  body{margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;}
-  h1,h2,h3{font-family:Archivo,system-ui,sans-serif; margin:0; text-wrap:balance}
+  html{height:100%}
+  body{margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:14px/1.5 var(--body);
+    -webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:var(--display); margin:0; text-wrap:balance; letter-spacing:-.01em}
+  button{font-family:inherit}
   .num{font-variant-numeric:tabular-nums}
-  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--red); outline-offset:2px}
+  .ic{width:16px; height:16px; flex:none; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px}
+  .ic.sm{width:14px; height:14px}
+  :focus-visible{outline:2px solid var(--red); outline-offset:2px; border-radius:4px}
+  [hidden]{display:none !important}
+  .sr{position:absolute; clip:rect(0 0 0 0); width:1px; height:1px; overflow:hidden}
 
-  .shell{display:flex; min-height:100vh;}
-  /* ---- Seitenleiste ---- */
-  .rail{flex:0 0 228px; background:var(--rail); color:var(--rail-ink); display:flex; flex-direction:column; padding:20px 0;}
-  .rail .brand{display:flex; align-items:center; gap:12px; padding:0 18px 18px; border-bottom:1px solid var(--rail-line);}
-  .rail .brand img{height:46px;}
-  .rail .brand .t{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:14.5px; letter-spacing:.03em; line-height:1.25;}
-  .rail .brand .s{font-size:10.5px; color:var(--rail-muted);}
-  .rail nav{display:flex; flex-direction:column; padding:12px 10px; gap:2px;}
-  .navitem{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--rail-muted); font:600 13.5px "IBM Plex Sans",sans-serif; background:none; border:none; cursor:pointer; text-align:left;}
-  .navitem:hover{color:var(--rail-ink); background:var(--rail-active);}
-  .navitem[aria-current="page"]{color:var(--rail-ink); background:var(--rail-active); box-shadow:inset 3px 0 0 var(--red);}
-  .navitem .n{margin-left:auto; font-size:11px; color:var(--rail-muted); background:var(--rail-line); border-radius:99px; padding:1px 8px;}
+  .shell{display:flex; min-height:100vh}
+
+  /* ---------- Seitenleiste ---------- */
+  .rail{flex:0 0 232px; background:var(--rail); color:var(--rail-ink); display:flex; flex-direction:column; padding:18px 0 16px; position:sticky; top:0; height:100vh}
+  .brand{display:flex; align-items:center; gap:12px; padding:2px 18px 16px; border-bottom:1px solid var(--rail-line)}
+  .brand img{height:44px; width:auto}
+  .brand .t{font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.06em; line-height:1.2; max-width:118px}
+  .brand .s{font-size:10.5px; color:var(--rail-muted); margin-top:2px}
+  .rail nav{display:flex; flex-direction:column; gap:2px; padding:12px 10px}
+  .navitem{display:flex; align-items:center; gap:10px; width:100%; padding:8px 12px; border:none; border-radius:var(--r-sm); background:none; color:var(--rail-muted); font:600 13.5px var(--body); text-align:left; cursor:pointer}
+  .navitem:hover{color:var(--rail-ink); background:var(--rail-active)}
+  .navitem[aria-current="page"]{color:var(--rail-ink); background:var(--rail-active); box-shadow:inset 3px 0 0 var(--red)}
+  .navitem .n{margin-left:auto; font-size:11px; font-weight:600; color:var(--rail-muted); background:var(--rail-line); border-radius:99px; padding:1px 8px; font-variant-numeric:tabular-nums}
+  .navitem .n:empty{display:none}
+  .navitem .n.warn{color:#F5C77A; background:#3A3120}
+  .navitem .n.crit{color:#F58B88; background:#3A2224}
   .rail .spacer{flex:1}
-  .rail .apistat{padding:12px 18px; font-size:11.5px; color:var(--rail-muted); border-top:1px solid var(--rail-line);}
-  .rail .apistat b{color:var(--rail-ink); font-weight:600;}
-  .rail .fetch{margin:10px 18px 0; background:var(--red); color:#fff; border:none; border-radius:8px; padding:8px 12px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
-  .rail .fetch:disabled{opacity:.55; cursor:default;}
+  .apistat{padding:12px 18px 0; border-top:1px solid var(--rail-line); font-size:11.5px; color:var(--rail-muted); line-height:1.45}
+  .apistat b{display:block; color:var(--rail-ink); font-weight:600}
+  .btn-fetch{margin:12px 18px 0; display:flex; align-items:center; justify-content:center; gap:8px; background:var(--rail-ink); color:var(--rail); border:none; border-radius:var(--r-sm); padding:9px 12px; font:600 13px var(--body); cursor:pointer}
+  .btn-fetch:hover{filter:brightness(.92)}
+  .btn-fetch:disabled{opacity:.6; cursor:progress}
+  .btn-fetch .ic.spin{animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
 
-  /* ---- Inhalt ---- */
-  .content{flex:1; min-width:0; padding:22px 26px;}
+  /* ---------- Inhalt ---------- */
+  .content{flex:1; min-width:0; padding:24px 28px 40px; max-width:1280px}
   section.panel{display:none} section.panel.active{display:block}
-  .pagehead{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;}
-  .pagehead h1{font-size:19px; font-weight:800;}
-  .pagehead .meta{font-size:12.5px; color:var(--muted);}
-  .pagehead .actions{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;}
-  .btn2{background:var(--surface); border:1px solid var(--border-strong); color:var(--ink); border-radius:8px; padding:7px 13px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
-  .btn2:hover{background:var(--surface2)}
-  .btn2:disabled{opacity:.55; cursor:default;}
-  .btn-red{background:var(--red); color:#fff; border:none; border-radius:8px; padding:7px 15px; font:600 12.5px "IBM Plex Sans",sans-serif; cursor:pointer;}
+  .pagehead{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px}
+  .pagehead h1{font-size:20px; font-weight:800}
+  .pagehead .meta{font-size:12.5px; color:var(--muted)}
+  .pagehead .actions{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center}
 
-  .fehlerbanner{display:flex; gap:10px; align-items:flex-start; background:var(--red-soft); color:var(--red-ink); border:1px solid var(--red); border-radius:9px; padding:10px 14px; font-size:13px; font-weight:600; margin-bottom:14px;}
-  .fehlerbanner[hidden]{display:none;}
+  .btn{display:inline-flex; align-items:center; gap:7px; background:var(--surface); border:1px solid var(--border-strong); color:var(--ink); border-radius:var(--r-sm); padding:7px 12px; font:600 12.5px var(--body); cursor:pointer; white-space:nowrap}
+  .btn:hover{background:var(--surface2)}
+  .btn:disabled{opacity:.55; cursor:default}
+  .btn.primary{background:var(--btn); color:var(--btn-ink); border-color:var(--btn)}
+  .btn.primary:hover{filter:brightness(.9)}
+  .btn.brand{background:var(--red); color:#fff; border-color:var(--red)}
+  .btn.brand:hover{filter:brightness(.95)}
+  .btn.ghost{border-color:transparent; background:none; color:var(--muted)}
+  .btn.ghost:hover{color:var(--ink); background:var(--surface2)}
+  .btn.icon{padding:6px}
 
-  .statgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-bottom:16px;}
-  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px; display:flex; flex-direction:column;}
-  .stat .l{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
-  .stat .v{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:22px;}
-  .stat .v .of{font-size:13px; color:var(--muted); font-weight:600;}
-  .stat.lead{border-left:3px solid var(--red);}
+  .seg{display:inline-flex; border:1px solid var(--border-strong); border-radius:var(--r-sm); overflow:hidden}
+  .seg button{border:none; background:var(--surface); color:var(--muted); font:600 12.5px var(--body); padding:7px 13px; cursor:pointer}
+  .seg button+button{border-left:1px solid var(--border-strong)}
+  .seg button[aria-pressed="true"]{background:var(--btn); color:var(--btn-ink)}
 
-  .chips{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;}
-  .chip{display:inline-flex; align-items:center; gap:7px; font:600 12.5px "IBM Plex Sans",sans-serif; color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:5px 13px; cursor:pointer;}
-  .chip .c{font-size:11px; background:var(--surface2); border-radius:99px; padding:0 7px;}
-  .chip[aria-pressed="true"]{color:#fff; background:var(--ink); border-color:var(--ink);}
-  .chip[aria-pressed="true"] .c{background:rgba(255,255,255,.18); color:#fff;}
-  .chip[hidden]{display:none;}
-  :root[data-theme="dark"] .chip[aria-pressed="true"], :root:not([data-theme="light"]) .chip[aria-pressed="true"]{color:var(--bg);}
-  .chips .search{margin-left:auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:7px 12px; color:var(--ink); font:inherit; width:220px;}
-  .sichttoggle{display:flex; gap:4px;}
+  .banner{display:flex; gap:10px; align-items:flex-start; border-radius:var(--r-sm); padding:10px 14px; font-size:13px; font-weight:500; margin-bottom:14px}
+  .banner.error{background:var(--red-soft); color:var(--red-ink); border:1px solid var(--red)}
+  .banner .ic{margin-top:2px}
+  .toast{position:fixed; right:20px; bottom:20px; z-index:50; display:flex; align-items:center; gap:10px; background:var(--ink); color:var(--bg); border-radius:10px; padding:11px 16px; font-size:13px; font-weight:500; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:520px}
+  .toast a{color:inherit; font-weight:600}
 
-  .tablewrap{background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:auto; max-height:430px;}
-  table{border-collapse:separate; border-spacing:0; width:100%; min-width:820px; font-size:13.5px;}
-  caption{position:absolute; clip:rect(0 0 0 0);}
-  th{position:sticky; top:0; background:var(--surface2); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; z-index:1;}
-  td{padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:middle;}
-  tr.member:hover td{background:var(--surface2)}
+  /* ---------- Kennzahlen ---------- */
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:10px; margin-bottom:16px}
+  .kpi{background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:12px 14px 11px}
+  .kpi .l{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  .kpi .v{font-family:var(--display); font-weight:800; font-size:24px; line-height:1.15; margin-top:4px; font-variant-numeric:tabular-nums}
+  .kpi .v .of{font-size:13px; color:var(--muted); font-weight:600; margin-left:2px}
+  .kpi .h{font-size:11.5px; color:var(--muted); margin-top:2px}
+  .kpi.lead{border-top:3px solid var(--red)}
+
+  /* ---------- Chips / Suche ---------- */
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px}
+  .chip{display:inline-flex; align-items:center; gap:7px; font:600 12.5px var(--body); color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:5px 12px; cursor:pointer}
+  .chip .c{font-size:11px; background:var(--surface2); border-radius:99px; padding:0 7px; font-variant-numeric:tabular-nums}
+  .chip:hover{border-color:var(--border-strong); color:var(--ink)}
+  .chip[aria-pressed="true"]{color:var(--btn-ink); background:var(--btn); border-color:var(--btn)}
+  .chip[aria-pressed="true"] .c{background:rgba(127,127,127,.28); color:inherit}
+  .search{margin-left:auto; display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm); padding:0 10px; color:var(--muted)}
+  .search input{border:none; background:none; color:var(--ink); font:inherit; padding:7px 0; width:210px; outline:none}
+  .search input::placeholder{color:var(--muted)}
+
+  /* ---------- Tabellen ---------- */
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--r)}
+  .tablewrap{overflow:auto; max-height:62vh}
+  table.data{border-collapse:separate; border-spacing:0; width:100%; font-size:13.5px}
+  table.data th{position:sticky; top:0; z-index:1; background:var(--surface2); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; user-select:none}
+  table.data th.r, table.data td.r{text-align:right}
+  table.data th[data-sort]{cursor:pointer}
+  table.data th[data-sort]:hover{color:var(--ink)}
+  table.data th .sorticon{display:inline-block; width:10px; margin-left:4px; color:var(--border-strong)}
+  table.data th[aria-sort="ascending"] .sorticon,table.data th[aria-sort="descending"] .sorticon{color:var(--ink)}
+  table.data th[aria-sort="ascending"]{color:var(--ink)} table.data th[aria-sort="descending"]{color:var(--ink)}
+  table.data td{padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:middle}
+  table.data tbody tr:last-child td{border-bottom:none}
+  tr.row{cursor:pointer}
+  tr.row:hover td{background:var(--surface2)}
+  tr.row[aria-expanded="true"] td{background:var(--surface2)}
+  tr.row.flash td{animation:flash 1.6s ease}
+  @keyframes flash{0%{background:var(--warn-soft)} 100%{background:transparent}}
+  .cell-name{display:flex; align-items:center; gap:8px}
+  .cell-name .chev{color:var(--muted); transition:transform .15s}
+  tr.row[aria-expanded="true"] .chev{transform:rotate(90deg)}
   .name{font-weight:600}
-  .fg{font-size:11.5px; color:var(--muted);}
-  .acct-badge{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600; color:var(--red-ink); background:var(--red-soft); border-radius:99px; padding:1px 9px; cursor:pointer; border:none; font-family:inherit;}
-  .bar{width:90px; height:7px; border-radius:99px; background:var(--surface2); border:1px solid var(--border); position:relative; overflow:hidden; display:inline-block; vertical-align:middle;}
-  .bar i{position:absolute; top:0; bottom:0; left:0; border-radius:99px;}
+  .sub{font-size:11.5px; color:var(--muted)}
+  .fgtag{display:inline-block; font-size:11px; font-weight:600; letter-spacing:.02em; color:var(--muted); background:var(--surface2); border-radius:4px; padding:1px 6px; font-variant-numeric:tabular-nums}
+  .konflikt{display:inline-flex; align-items:center; gap:4px; color:var(--warn); font-size:11.5px; font-weight:600}
+  .bar{width:96px; height:7px; border-radius:99px; background:var(--track); position:relative; overflow:hidden; display:inline-block; vertical-align:middle}
+  .bar i{position:absolute; top:0; bottom:0; left:0; border-radius:99px}
   .bar i.g{background:var(--ok)} .bar i.o{background:var(--warn)} .bar i.r{background:var(--red)}
-  .status{display:inline-block; font-size:11.5px; font-weight:600; border-radius:99px; padding:2px 9px; white-space:nowrap;}
-  .status.ok{color:var(--ok); background:var(--ok-soft);}
-  .status.warn{color:var(--warn); background:var(--warn-soft);}
-  .status.crit{color:var(--red-ink); background:var(--red-soft);}
-  tr.detail td{background:var(--surface2); padding:0;}
-  .subaccounts{padding:8px 12px 12px 40px; font-size:12.5px;}
-  .subrow{display:flex; gap:16px; align-items:baseline; padding:4px 0; flex-wrap:wrap;}
-  .subrow .who{min-width:210px;}
-  .subrow .meta{color:var(--muted); font-size:12px;}
-  .tfoot{display:flex; gap:12px; padding:9px 4px; font-size:12px; color:var(--muted);}
+  .status{display:inline-block; font-size:11.5px; font-weight:600; border-radius:99px; padding:2px 9px; white-space:nowrap}
+  .status.ok{color:var(--ok); background:var(--ok-soft)}
+  .status.warn{color:var(--warn); background:var(--warn-soft)}
+  .status.crit{color:var(--red-ink); background:var(--red-soft)}
+  .typ{display:inline-block; font-size:11px; font-weight:600; border-radius:4px; padding:1px 7px; background:var(--surface2); color:var(--ink2)}
+  .typ.mitglied{background:var(--info-soft); color:var(--info)}
+  .typ.zweitaccount{background:var(--warn-soft); color:var(--warn)}
+  .typ.freiwillig{background:var(--ok-soft); color:var(--ok)}
+  .typ.unbekannt{background:var(--red-soft); color:var(--red-ink)}
+  .plink{display:inline-flex; align-items:center; gap:4px; color:var(--muted); text-decoration:none; font-size:12px; font-weight:600}
+  .plink:hover{color:var(--ink)}
+  tr.detail td{padding:0; background:var(--surface2)}
+  .ledger{padding:10px 14px 14px 44px}
+  .ledger table{border-collapse:collapse; width:100%; font-size:12.5px}
+  .ledger th{font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:4px 8px; border-bottom:1px solid var(--border)}
+  .ledger td{padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top}
+  .ledger tr:last-child td{border-bottom:none}
+  .ledger .sum{margin-top:8px; font-size:12px; color:var(--muted)}
+  .ledger .dq{margin-top:8px; display:flex; flex-direction:column; gap:4px}
+  .ledger .dq div{font-size:12.5px; display:flex; gap:8px; align-items:baseline}
+  .tfoot{display:flex; gap:12px; align-items:center; padding:9px 14px; font-size:12px; color:var(--muted); border-top:1px solid var(--border)}
+  .empty{padding:36px 20px; text-align:center; color:var(--muted); font-size:13.5px}
+  .empty b{display:block; color:var(--ink); font-family:var(--display); font-size:15px; margin-bottom:4px}
+  .code{display:inline-block; font-family:var(--display); font-weight:700; font-size:11px; letter-spacing:.04em; border-radius:4px; padding:1px 6px; background:var(--surface2); color:var(--ink2)}
+  .code.crit{background:var(--red-soft); color:var(--red-ink)}
+  .code.warn{background:var(--warn-soft); color:var(--warn)}
+  .code.info{background:var(--info-soft); color:var(--info)}
 
-  /* ---- Bericht ---- */
-  .hero{display:grid; grid-template-columns:270px 1fr; gap:16px; margin-bottom:16px;}
-  @media (max-width:900px){ .hero{grid-template-columns:1fr} }
-  .ringcard{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; display:flex; flex-direction:column; align-items:center; gap:8px;}
-  .ringwrap{position:relative; width:170px; height:170px;}
-  .ringwrap svg{width:100%; height:100%; transform:rotate(-90deg);}
-  .ringwrap .mid{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
-  .ringwrap .pct{font-family:Archivo,system-ui,sans-serif; font-weight:900; font-size:37px; line-height:1;}
-  .ringwrap .lbl{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
-  .ringcard .sub{font-size:12px; color:var(--muted); text-align:center;}
-  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-content:start;}
-  .panelcard{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:16px;}
-  .panelcard h2{font-size:15px; margin-bottom:2px;}
-  .panelcard .sub{font-size:12.5px; color:var(--muted); margin:0 0 12px;}
-  .gbars{display:flex; flex-direction:column; gap:10px;}
-  .gbar{display:grid; grid-template-columns:140px 1fr 96px; gap:12px; align-items:center; font-size:13px;}
-  .gbar .track{height:13px; border-radius:99px; background:var(--track); position:relative; overflow:hidden;}
-  .gbar .fill{position:absolute; top:0; bottom:0; left:0; border-radius:99px; background:var(--red);}
-  .gbar .fill.hi{background:var(--ok);}
-  .gbar .val{text-align:right; color:var(--muted); font-size:12px;}
-  .legend{display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--muted);}
-  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; vertical-align:-1px; margin-right:5px;}
-  .legend .a{background:var(--ok)} .legend .b{background:var(--red)}
-  .plaintable{border-collapse:collapse; width:100%; min-width:0; font-size:13px;}
-  .plaintable th{position:static; background:none; padding:8px 10px;}
-  .plaintable td{padding:8px 10px;}
-  .tablenote{font-size:12px; color:var(--muted); margin-top:10px;}
+  /* ---------- Bericht ---------- */
+  .hero{display:grid; grid-template-columns:280px 1fr; gap:14px; margin-bottom:14px}
+  @media (max-width:960px){ .hero{grid-template-columns:1fr} }
+  .ringcard{padding:22px 18px; display:flex; flex-direction:column; align-items:center; gap:10px}
+  .ring{position:relative; width:172px; height:172px}
+  .ring svg{width:100%; height:100%; transform:rotate(-90deg)}
+  .ring .mid{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .ring .pct{font-family:var(--display); font-weight:800; font-size:38px; line-height:1; letter-spacing:-.02em}
+  .ring .lbl{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); margin-top:6px; font-weight:600}
+  .ringcard .sub{font-size:12.5px; color:var(--muted); text-align:center; line-height:1.45}
+  .facts{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; align-content:start}
+  @media (max-width:1100px){ .facts{grid-template-columns:repeat(2,1fr)} }
+  .section{padding:18px 20px; margin-bottom:14px}
+  .section h2{font-size:15px; font-weight:700}
+  .section .sub{font-size:12.5px; color:var(--muted); margin:2px 0 12px}
+  .gbars{display:flex; flex-direction:column; gap:10px}
+  .gbar{display:grid; grid-template-columns:170px 1fr 110px; gap:12px; align-items:center; font-size:13px}
+  .gbar .track{height:12px; border-radius:99px; background:var(--track); position:relative; overflow:hidden}
+  .gbar .fill{position:absolute; top:0; bottom:0; left:0; border-radius:99px; background:var(--ok)}
+  .gbar .fill.lo{background:var(--red)} .gbar .fill.n{background:var(--ink2)}
+  .gbar .val{text-align:right; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+  .legend{display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--muted)}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; vertical-align:-1px; margin-right:5px}
 
-  /* ---- Abgleich ---- */
-  .steps{display:flex; flex-direction:column; gap:14px;}
-  .step{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px;}
-  .step h2{font-size:15px; display:flex; gap:10px; align-items:center; margin-bottom:8px;}
-  .stepnum{flex:none; width:22px; height:22px; border-radius:50%; background:var(--ink); color:var(--bg); font:700 12px Archivo,system-ui,sans-serif; display:flex; align-items:center; justify-content:center;}
-  .fileok{display:flex; align-items:center; gap:10px; font-size:13px; border:1px solid var(--border); border-radius:9px; padding:10px 13px; background:var(--bg); flex-wrap:wrap;}
-  .fileok .tick{color:var(--ok); font-weight:700;}
-  .fileok .swap{margin-left:auto; font-size:12px; color:var(--red-ink); background:none; border:none; cursor:pointer; text-decoration:underline; font-family:inherit;}
-  .hintline{margin:8px 0 0; font-size:12px; color:var(--muted);}
-  .resultlead{font-size:14px; margin:0 0 12px;}
-  .artifacts{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;}
-  .artifact{border:1px solid var(--border); border-radius:10px; padding:13px 15px; background:var(--bg); display:flex; flex-direction:column; gap:5px;}
-  .artifact h3{font-size:13.5px;}
-  .artifact p{margin:0; font-size:12px; color:var(--muted); flex:1;}
-  .artifact .cta{align-self:flex-start; margin-top:5px; font-size:12px; font-weight:600; color:var(--ink); background:none; border:1px solid var(--border-strong); border-radius:7px; padding:4px 11px; cursor:pointer;}
-  .artifact .path{font-size:11px; color:var(--muted); word-break:break-all;}
-  .count{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:20px;}
+  /* ---------- Abgleich ---------- */
+  .steps{display:flex; flex-direction:column; gap:12px}
+  .step{padding:16px 18px}
+  .step h2{font-size:15px; display:flex; gap:10px; align-items:center; margin-bottom:8px}
+  .stepnum{flex:none; width:22px; height:22px; border-radius:50%; background:var(--btn); color:var(--btn-ink); font:700 12px var(--display); display:flex; align-items:center; justify-content:center}
+  .drop{border:1.5px dashed var(--border-strong); border-radius:10px; padding:22px; text-align:center; color:var(--muted); font-size:13.5px; cursor:pointer; transition:background .12s,border-color .12s}
+  .drop:hover,.drop.over{background:var(--surface2); border-color:var(--ink)}
+  .drop b{color:var(--ink)}
+  .drop .hint{display:block; font-size:12px; margin-top:6px}
+  .fileok{display:flex; align-items:center; gap:10px; font-size:13px; border:1px solid var(--border); border-radius:var(--r-sm); padding:10px 13px; background:var(--bg)}
+  .fileok .ic{color:var(--ok)}
+  .fileok .swap{margin-left:auto}
+  .artifacts{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:12px}
+  .artifact{border:1px solid var(--border); border-radius:10px; padding:14px 15px; background:var(--bg); display:flex; flex-direction:column; gap:6px}
+  .artifact .count{font-family:var(--display); font-weight:800; font-size:24px; line-height:1}
+  .artifact h3{font-size:13.5px; font-weight:700}
+  .artifact p{margin:0; font-size:12.5px; color:var(--muted); flex:1}
+  .artifact .row{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap}
+  .lead{font-size:14px; margin:0 0 6px}
+  .warnlist{margin:10px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px}
+  .warnlist li{display:flex; gap:8px; align-items:flex-start; font-size:12.5px; padding:8px 11px; border-radius:var(--r-sm); background:var(--warn-soft); color:var(--warn)}
+  .hintline{font-size:12px; color:var(--muted); margin:8px 0 0}
 
-  /* ---- Datenqualität ---- */
-  .dqlist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px;}
-  .dqlist li{display:flex; gap:10px; align-items:flex-start; font-size:13px; padding:10px 13px; border:1px solid var(--border); border-radius:9px; background:var(--surface);}
-  .sev{flex:none; margin-top:5px; width:8px; height:8px; border-radius:50%;}
-  .sev.warn{background:var(--warn)} .sev.crit{background:var(--red)} .sev.info{background:var(--muted)}
+  /* ---------- Datenqualität ---------- */
+  .dqgroup{margin-bottom:14px}
+  .dqgroup h2{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:8px}
+  .dqgroup h2 .dot{width:9px; height:9px; border-radius:50%}
+  .dqcard{display:grid; grid-template-columns:auto 1fr; gap:10px 14px; padding:13px 16px; border-left:3px solid var(--border-strong)}
+  .dqcard+.dqcard{margin-top:8px}
+  .dqcard.crit{border-left-color:var(--red)} .dqcard.warn{border-left-color:var(--warn)} .dqcard.info{border-left-color:var(--info)}
+  .dqcard .text{font-size:13.5px; line-height:1.5}
+  .dqcard .betroffene{grid-column:2; display:flex; flex-wrap:wrap; gap:6px}
+  .pchip{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; background:var(--surface2); color:var(--ink2); border:1px solid var(--border); border-radius:99px; padding:3px 10px; cursor:pointer; font-family:inherit}
+  .pchip:hover{border-color:var(--ink); color:var(--ink)}
+  .pchip.static{cursor:default; color:var(--muted)}
+  .pchip.static:hover{border-color:var(--border); color:var(--muted)}
 
-  /* ---- Regeln / Protokoll ---- */
-  .ruletable td, .ruletable th{padding:9px 12px;}
-  .ruletable input[type="text"], .ruletable input[type="number"]{width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; color:var(--ink); font:inherit;}
-  .ruletable input[type="number"]{width:70px;}
-  .check{color:var(--ok); font-weight:700;}
-  .cross{color:var(--muted);}
-  .rmrow{background:none; border:1px solid var(--border-strong); border-radius:6px; color:var(--red-ink); cursor:pointer; padding:3px 8px; font:inherit;}
-  .regeln-status{font-size:12.5px; color:var(--muted); margin-top:10px;}
-  .loglist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;}
-  .loglist li{display:flex; gap:14px; padding:10px 4px; border-bottom:1px solid var(--border); font-size:13px;}
-  .loglist .d{flex:none; width:150px; color:var(--muted);}
-  .leer{font-size:13px; color:var(--muted); padding:14px 2px;}
+  /* ---------- Regeln ---------- */
+  .form-table{width:100%; border-collapse:collapse; font-size:13.5px}
+  .form-table th{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:6px 8px; border-bottom:1px solid var(--border)}
+  .form-table td{padding:8px; border-bottom:1px solid var(--border)}
+  .form-table input[type=text],.form-table input[type=number],.field input{background:var(--bg); border:1px solid var(--border-strong); border-radius:6px; padding:6px 9px; color:var(--ink); font:inherit; width:100%}
+  .form-table input[type=number]{width:80px}
+  .form-table input[type=checkbox]{width:16px; height:16px; accent-color:var(--ink)}
+  .field{display:grid; grid-template-columns:1fr 120px; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:13.5px}
+  .field:last-child{border-bottom:none}
+  .field .desc{font-size:12px; color:var(--muted)}
+  .field .fixed{font-weight:600; text-align:right}
 
+  /* ---------- Protokoll ---------- */
+  .infobox{display:flex; gap:10px; align-items:flex-start; background:var(--info-soft); color:var(--info); border-radius:var(--r-sm); padding:11px 14px; font-size:13px; margin-bottom:14px}
+  .timeline{list-style:none; margin:0; padding:0}
+  .timeline li{display:grid; grid-template-columns:150px 1fr; gap:14px; padding:10px 16px; border-bottom:1px solid var(--border); font-size:13.5px}
+  .timeline li:last-child{border-bottom:none}
+  .timeline .z{color:var(--muted); font-variant-numeric:tabular-nums; font-size:12.5px}
+  .timeline .a{font-weight:600}
+  .timeline .d{color:var(--muted); font-size:12.5px}
+  .timeline .d a{color:var(--ink); font-weight:600}
+
+  /* ---------- Druck ---------- */
   @media print{
-    .rail,.pagehead .actions,.chips,.tfoot,.fehlerbanner,.sichttoggle{display:none !important}
+    .rail,.pagehead .actions,.toolbar,.banner,.toast,.seg,.tfoot .pager{display:none !important}
     body{background:#fff; color:#000}
-    .panelcard,.ringcard,.stat,.tablewrap{border-color:#bbb; break-inside:avoid;}
-    .content{padding:0}
+    .content{padding:0; max-width:none}
+    .card,.kpi,.section{border-color:#bbb; break-inside:avoid}
+    .tablewrap{max-height:none; overflow:visible}
+    table.data th{position:static}
+    tr.row{break-inside:avoid}
   }
-  @media (max-width:760px){ .rail{display:none} }
-  @media (prefers-reduced-motion: no-preference){
-    .panel.active{animation:fade .18s ease}
-    @keyframes fade{from{opacity:.4}to{opacity:1}}
-  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
 </style>
+
+<!-- Icon-Sprite (Strich-Icons, 24er Raster) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17v-5"/><path d="M13 17V8"/><path d="M18 17v-7"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M20 17H7"/><path d="M10 14l-3 3 3 3"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h12l-2 4 2 4H5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--rail)"/><circle cx="15" cy="12" r="2" fill="var(--rail)"/><circle cx="8" cy="18" r="2" fill="var(--rail)"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 13v6H5V6h6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-9"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M6 18L18 6"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 4v16"/><path d="M5 7l3-3 3 3"/><path d="M16 20V4"/><path d="M13 17l3 3 3-3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+</svg>
 
 <div class="shell">
   <aside class="rail">
     <div class="brand">
-      <img alt="Pfadi Winterthur Handball" src="/static/logo.png">
+      <img src="/static/logo.png" alt="Pfadi Winterthur Handball">
       <div><div class="t">HELFER-COCKPIT</div><div class="s">Pfadi Winterthur Handball</div></div>
     </div>
-    <nav>
-      <button class="navitem" aria-current="page" data-panel="p-kontingent">▦ Kontingent <span class="n num" id="nav-kontingent">–</span></button>
-      <button class="navitem" data-panel="p-bericht">📈 Bericht</button>
-      <button class="navitem" data-panel="p-abgleich">⇄ Quartals-Abgleich <span class="n num" id="nav-abgleich" hidden>0</span></button>
-      <button class="navitem" data-panel="p-dq">⚑ Datenqualität <span class="n num" id="nav-dq">–</span></button>
-      <button class="navitem" data-panel="p-regeln">⚙ Regeln</button>
-      <button class="navitem" data-panel="p-log">≡ Protokoll</button>
+    <nav aria-label="Bereiche">
+      <button class="navitem" data-panel="p-kontingent" aria-current="page"><svg class="ic"><use href="#i-grid"/></svg>Kontingent <span class="n num" id="nav-n-kontingent"></span></button>
+      <button class="navitem" data-panel="p-helfende"><svg class="ic"><use href="#i-users"/></svg>Alle Helfenden <span class="n num" id="nav-n-helfende"></span></button>
+      <button class="navitem" data-panel="p-bericht"><svg class="ic"><use href="#i-chart"/></svg>Bericht</button>
+      <button class="navitem" data-panel="p-abgleich"><svg class="ic"><use href="#i-swap"/></svg>Quartals-Abgleich <span class="n num" id="nav-n-abgleich"></span></button>
+      <button class="navitem" data-panel="p-dq"><svg class="ic"><use href="#i-flag"/></svg>Datenqualität <span class="n num" id="nav-n-dq"></span></button>
+      <button class="navitem" data-panel="p-regeln"><svg class="ic"><use href="#i-sliders"/></svg>Regeln</button>
+      <button class="navitem" data-panel="p-log"><svg class="ic"><use href="#i-list"/></svg>Protokoll</button>
     </nav>
     <div class="spacer"></div>
-    <div class="apistat" id="stand-anzeige">Helfertool-API<br><b>Noch keine Daten geladen</b></div>
-    <button class="fetch" id="btn-abruf">↻ Daten neu abrufen</button>
+    <div class="apistat">Helfertool-API<b id="stand-anzeige">Noch nicht abgerufen</b></div>
+    <button class="btn-fetch" id="btn-abrufen" aria-label="Daten neu abrufen"><svg class="ic"><use href="#i-refresh"/></svg><span>Daten neu abrufen</span></button>
   </aside>
 
-  <div class="content">
-    <div class="fehlerbanner" id="fehler-banner" role="alert" hidden></div>
-    <div class="fehlerbanner" id="hinweis-banner" role="status" hidden style="background:var(--ok-soft); color:var(--ok); border-color:var(--ok);"></div>
+  <main class="content">
+    <div class="banner error" id="fehler-banner" role="alert" hidden><svg class="ic"><use href="#i-alert"/></svg><span id="fehler-text"></span></div>
 
-    <!-- ============ KONTINGENT ============ -->
-    <section class="panel active" id="p-kontingent">
+    <!-- ================= KONTINGENT ================= -->
+    <section class="panel active" id="p-kontingent" aria-labelledby="h-kontingent">
       <div class="pagehead">
-        <h1>Kontingent-Erfüllung</h1>
-        <span class="meta num" id="kontingent-meta">Sicht: Saison-Soll</span>
-        <span class="actions sichttoggle">
-          <button class="chip" id="sicht-saison" aria-pressed="true">Saison-Soll</button>
-          <button class="chip" id="sicht-halbjahr" aria-pressed="false">Halbjahresziel</button>
-        </span>
-        <span class="actions">
-          <button class="btn2" id="btn-saeumige-csv">Säumigen-CSV</button>
-          <button class="btn2" id="btn-gesamtexport">Excel-Gesamtexport</button>
-          <button class="btn2" id="btn-print-kontingent">🖨 Drucken</button>
-        </span>
+        <h1 id="h-kontingent">Kontingent-Erfüllung</h1>
+        <span class="meta" id="sicht-label">Sicht: Saison-Soll</span>
+        <div class="actions">
+          <div class="seg" role="group" aria-label="Sicht">
+            <button data-sicht="saison" aria-pressed="true">Saison-Soll</button>
+            <button data-sicht="halbjahr" aria-pressed="false">Halbjahresziel</button>
+          </div>
+          <button class="btn" id="btn-saeumige-csv"><svg class="ic"><use href="#i-download"/></svg>Säumigen-CSV</button>
+          <button class="btn" id="btn-gesamtexport"><svg class="ic"><use href="#i-download"/></svg>Excel-Gesamtexport</button>
+          <button class="btn" id="btn-print-kontingent"><svg class="ic"><use href="#i-print"/></svg>Drucken</button>
+        </div>
       </div>
 
-      <div class="statgrid">
-        <div class="stat lead"><span class="l">Soll erfüllt</span><span class="v num" id="kpi-erfuellt">– / –</span></div>
-        <div class="stat"><span class="l">Halbjahresziel</span><span class="v num" id="kpi-halbjahr">– / –</span></div>
-        <div class="stat"><span class="l">Ohne Einsatz</span><span class="v num" id="kpi-ohne-einsatz">–</span></div>
-        <div class="stat"><span class="l">Ist / Soll gesamt</span><span class="v num" id="kpi-ist-soll">– / –</span></div>
-        <div class="stat"><span class="l">Zweitaccounts</span><span class="v num" id="kpi-zweitaccounts">–</span></div>
+      <div class="kpis">
+        <div class="kpi lead"><div class="l">Soll erfüllt</div><div class="v" id="kpi-erfuellt">–</div><div class="h" id="kpi-erfuellt-h"></div></div>
+        <div class="kpi"><div class="l">Halbjahresziel erreicht</div><div class="v" id="kpi-halbjahr">–</div><div class="h" id="kpi-halbjahr-h"></div></div>
+        <div class="kpi"><div class="l">Noch ohne Einsatz</div><div class="v" id="kpi-ohne">–</div><div class="h">Kandidaten für die Erinnerung</div></div>
+        <div class="kpi"><div class="l">Ist / Soll gesamt</div><div class="v" id="kpi-istsoll">–</div><div class="h">Summe der Einsatzwerte</div></div>
+        <div class="kpi"><div class="l">Zweitaccounts</div><div class="v" id="kpi-zweit">–</div><div class="h">über FG-Nummer verknüpft</div></div>
       </div>
 
-      <div class="chips">
-        <button class="chip" data-filter="alle" aria-pressed="true">Alle <span class="c num" id="chip-alle">0</span></button>
-        <button class="chip" data-filter="erfuellt" aria-pressed="false">Erfüllt <span class="c num" id="chip-erfuellt">0</span></button>
-        <button class="chip" data-filter="auf_kurs" aria-pressed="false" id="chip-auf-kurs-btn">Auf Kurs <span class="c num" id="chip-auf-kurs">0</span></button>
-        <button class="chip" data-filter="saeumig" aria-pressed="false">Säumig <span class="c num" id="chip-saeumig">0</span></button>
-        <button class="chip" data-filter="zweitaccount" aria-pressed="false">Mit Zweitaccount <span class="c num" id="chip-zweitaccount">0</span></button>
-        <input class="search" type="search" id="suche-mitglieder" placeholder="Name oder FG-Nummer …">
+      <div class="toolbar" id="chips-kontingent">
+        <button class="chip" data-filter="alle" aria-pressed="true">Alle <span class="c">0</span></button>
+        <button class="chip" data-filter="erfuellt" aria-pressed="false">Erfüllt <span class="c">0</span></button>
+        <button class="chip" data-filter="auf_kurs" aria-pressed="false">Auf Kurs <span class="c">0</span></button>
+        <button class="chip" data-filter="saeumig" aria-pressed="false">Säumig <span class="c">0</span></button>
+        <button class="chip" data-filter="zweitaccount" aria-pressed="false">Mit Zweitaccount <span class="c">0</span></button>
+        <label class="search"><svg class="ic sm"><use href="#i-search"/></svg><input type="search" id="suche-kontingent" placeholder="Name oder FG-Nummer" aria-label="Mitglieder suchen"></label>
       </div>
 
-      <div class="tablewrap">
-        <table>
-          <caption>Kontingent-Erfüllung pro Mitglied</caption>
-          <thead>
-            <tr>
-              <th>Mitglied</th><th>Gruppen</th><th>Accounts</th>
-              <th class="num" id="th-soll">Soll</th><th class="num">Ist</th><th>Fortschritt</th><th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="tab-mitglieder"></tbody>
-        </table>
+      <div class="card">
+        <div class="tablewrap">
+          <table class="data" id="tab-mitglieder">
+            <caption class="sr">Kontingent-Erfüllung pro Mitglied</caption>
+            <thead><tr>
+              <th data-sort="name" aria-sort="none">Mitglied<span class="sorticon">↕</span></th>
+              <th data-sort="gruppen" aria-sort="none">Gruppen<span class="sorticon">↕</span></th>
+              <th data-sort="accounts" class="r" aria-sort="none">Accounts<span class="sorticon">↕</span></th>
+              <th data-sort="soll" class="r" aria-sort="none">Soll<span class="sorticon">↕</span></th>
+              <th data-sort="ist" class="r" aria-sort="none">Ist<span class="sorticon">↕</span></th>
+              <th>Fortschritt</th>
+              <th data-sort="status" aria-sort="ascending">Status<span class="sorticon">↕</span></th>
+            </tr></thead>
+            <tbody id="tab-mitglieder-body"></tbody>
+          </table>
+        </div>
+        <div class="tfoot" id="tfoot-kontingent"></div>
       </div>
-      <div class="tfoot num" id="tab-mitglieder-status">Lädt …</div>
     </section>
 
-    <!-- ============ BERICHT ============ -->
-    <section class="panel" id="p-bericht">
+    <!-- ================= ALLE HELFENDEN ================= -->
+    <section class="panel" id="p-helfende" aria-labelledby="h-helfende">
       <div class="pagehead">
-        <h1>Saisonbericht</h1>
-        <span class="meta num" id="bericht-meta">Stand –</span>
-        <span class="actions">
-          <button class="btn-red" id="btn-print">🖨 Bericht drucken (Vorstands-Protokoll)</button>
-          <button class="btn2" id="btn-saeumige-csv-bericht">Säumigen-CSV</button>
-        </span>
+        <h1 id="h-helfende">Alle Helfenden</h1>
+        <span class="meta">Jeder Account im Portal — Anzahl-Zähler zeigen, wer die Einsätze ausführt</span>
+        <div class="actions">
+          <button class="btn" id="btn-gesamtexport-2"><svg class="ic"><use href="#i-download"/></svg>Excel-Gesamtexport</button>
+          <button class="btn" id="btn-print-helfende"><svg class="ic"><use href="#i-print"/></svg>Drucken</button>
+        </div>
       </div>
+      <div class="toolbar" id="chips-helfende">
+        <button class="chip" data-typ="alle" aria-pressed="true">Alle <span class="c">0</span></button>
+        <button class="chip" data-typ="mitglied" aria-pressed="false">Mitglieder <span class="c">0</span></button>
+        <button class="chip" data-typ="zweitaccount" aria-pressed="false">Zweitaccounts <span class="c">0</span></button>
+        <button class="chip" data-typ="freiwillig" aria-pressed="false">Freiwillige <span class="c">0</span></button>
+        <button class="chip" data-typ="unbekannt" aria-pressed="false">Unbekannte <span class="c">0</span></button>
+        <button class="chip" data-typ="unklassifiziert" aria-pressed="false" hidden>Unklassifiziert <span class="c">0</span></button>
+        <button class="chip" data-typ="aktiv" aria-pressed="false">Mit Einsätzen <span class="c">0</span></button>
+        <label class="search"><svg class="ic sm"><use href="#i-search"/></svg><input type="search" id="suche-helfende" placeholder="Name, Gruppe oder FG-Nummer" aria-label="Helfende suchen"></label>
+      </div>
+      <div class="card">
+        <div class="tablewrap">
+          <table class="data" id="tab-helfende">
+            <caption class="sr">Alle Helfenden</caption>
+            <thead><tr>
+              <th data-sort="name" aria-sort="ascending">Name<span class="sorticon">↕</span></th>
+              <th data-sort="typ" aria-sort="none">Typ<span class="sorticon">↕</span></th>
+              <th data-sort="gruppen" aria-sort="none">Gruppen<span class="sorticon">↕</span></th>
+              <th data-sort="num_ok" class="r" aria-sort="none">Geleistet<span class="sorticon">↕</span></th>
+              <th data-sort="num_confirmed" class="r" aria-sort="none">Zugesagt<span class="sorticon">↕</span></th>
+              <th data-sort="num_nok" class="r" aria-sort="none">Nicht erschienen<span class="sorticon">↕</span></th>
+              <th data-sort="ist_wert" class="r" aria-sort="none">Wert<span class="sorticon">↕</span></th>
+              <th>Portal</th>
+            </tr></thead>
+            <tbody id="tab-helfende-body"></tbody>
+          </table>
+        </div>
+        <div class="tfoot" id="tfoot-helfende"></div>
+      </div>
+    </section>
 
+    <!-- ================= BERICHT ================= -->
+    <section class="panel" id="p-bericht" aria-labelledby="h-bericht">
+      <div class="pagehead">
+        <h1 id="h-bericht">Saisonbericht</h1>
+        <span class="meta" id="b-stand"></span>
+        <div class="actions">
+          <button class="btn brand" id="btn-print-bericht"><svg class="ic"><use href="#i-print"/></svg>Bericht drucken</button>
+          <button class="btn" id="btn-saeumige-csv-2"><svg class="ic"><use href="#i-download"/></svg>Säumigen-CSV</button>
+        </div>
+      </div>
       <div class="hero">
-        <div class="ringcard">
-          <div class="ringwrap">
+        <div class="card ringcard">
+          <div class="ring">
             <svg viewBox="0 0 100 100" aria-hidden="true">
-              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--track)" stroke-width="11"/>
-              <circle id="ring-progress" cx="50" cy="50" r="42" fill="none" stroke="var(--red)" stroke-width="11"
-                stroke-linecap="round" stroke-dasharray="0 263.9" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--track)" stroke-width="10"/>
+              <circle id="b-ring-fill" cx="50" cy="50" r="42" fill="none" stroke="var(--red)" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 263.9"/>
             </svg>
-            <div class="mid"><span class="pct num" id="ring-pct">0&nbsp;%</span><span class="lbl">Ist / Soll</span></div>
+            <div class="mid"><span class="pct num" id="b-pct">–</span><span class="lbl">Ist / Soll</span></div>
           </div>
-          <div class="sub num" id="ring-sub">Noch keine Daten geladen.</div>
+          <div class="sub" id="b-sub"></div>
         </div>
         <div class="facts">
-          <div class="stat"><span class="l">Soll voll erfüllt</span><span class="v num" id="fact-erfuellt">– / –</span></div>
-          <div class="stat"><span class="l">Halbjahresziel erreicht</span><span class="v num" id="fact-halbjahr">– / –</span></div>
-          <div class="stat"><span class="l">Noch ohne Einsatz</span><span class="v num" id="fact-ohne-einsatz">–</span></div>
-          <div class="stat"><span class="l">Zweitaccounts</span><span class="v num" id="fact-zweitaccounts">–</span></div>
-          <div class="stat"><span class="l">Soll-Konflikte</span><span class="v num" id="fact-soll-konflikte">–</span></div>
-          <div class="stat"><span class="l">NOK-Einsätze</span><span class="v num" id="fact-nok">–</span></div>
-          <div class="stat"><span class="l">Datenqualität</span><span class="v num" id="fact-dq">–</span></div>
+          <div class="kpi"><div class="l">Soll voll erfüllt</div><div class="v" id="b-erfuellt">–</div></div>
+          <div class="kpi"><div class="l">Halbjahresziel erreicht</div><div class="v" id="b-halbjahr">–</div></div>
+          <div class="kpi"><div class="l">Noch ohne Einsatz</div><div class="v" id="b-ohne">–</div></div>
+          <div class="kpi"><div class="l">Accounts im Portal</div><div class="v" id="b-accounts">–</div></div>
+          <div class="kpi"><div class="l">Zweitaccounts</div><div class="v" id="b-zweit">–</div></div>
+          <div class="kpi"><div class="l">Soll-Konflikte</div><div class="v" id="b-konflikt">–</div></div>
+          <div class="kpi"><div class="l">Nicht erschienen</div><div class="v" id="b-nok">–</div></div>
+          <div class="kpi"><div class="l">Datenqualität</div><div class="v" id="b-dq">–</div></div>
         </div>
       </div>
 
-      <div class="panelcard">
-        <h2>Erfüllung nach Gruppe</h2>
-        <p class="sub">Anteil der Mitglieder je Portal-Gruppe, die das Halbjahresziel erreicht haben (mind. 1 Einsatz).</p>
-        <div class="gbars num" id="gruppen-bars"></div>
-        <div class="legend"><span><i class="a"></i>über Vereinsschnitt</span><span><i class="b"></i>unter Vereinsschnitt</span></div>
+      <div class="card section" id="b-kategorie-card" hidden>
+        <h2>Erfüllung nach Fairgate-Kategorie</h2>
+        <p class="sub">Anteil der Mitglieder je Kategorie, die das Halbjahresziel erreicht haben — aus dem zuletzt geladenen Fairgate-Export.</p>
+        <div class="gbars" id="b-kategorie-bars"></div>
+        <div class="legend"><span><i style="background:var(--ok)"></i>über Vereinsschnitt</span><span><i style="background:var(--red)"></i>unter Vereinsschnitt</span></div>
       </div>
 
-      <div class="panelcard">
+      <div class="card section">
         <h2>Wer leistet die Einsätze?</h2>
-        <p class="sub">Geleistete und fest übernommene Einsätze nach Typ des ausführenden Accounts.</p>
-        <div class="gbars num" id="wer-leistet-bars"></div>
-        <p class="tablenote" id="wer-leistet-hinweis"></p>
+        <p class="sub">Geleistete und fest zugesagte Einsätze nach Typ des ausführenden Accounts (Anzahl, nicht Wert).</p>
+        <div class="gbars" id="b-wer-bars"></div>
       </div>
 
-      <div class="panelcard">
-        <h2>Säumigen-Liste <span class="num" style="color:var(--muted); font-size:12.5px; font-weight:600" id="saeumige-titel">· Auszug</span></h2>
-        <p class="sub">Einsätze verknüpfter Zweitaccounts sind bereits eingerechnet.</p>
-        <table class="plaintable">
-          <caption>Mitglieder ohne Einsatz</caption>
-          <thead><tr><th>Mitglied</th><th>Gruppen</th><th class="num">Soll</th><th class="num">Ist</th><th>Accounts</th></tr></thead>
-          <tbody id="saeumige-auszug"></tbody>
+      <div class="card section">
+        <h2>Säumige Mitglieder</h2>
+        <p class="sub" id="b-saeumige-sub">Ohne Einsatz in der Saison-Sicht. Vollständige Liste über «Säumigen-CSV».</p>
+        <table class="data" style="font-size:13px">
+          <caption class="sr">Säumige Mitglieder</caption>
+          <thead><tr><th>Mitglied</th><th>Gruppen</th><th class="r">Soll</th><th class="r">Ist</th><th>Accounts</th></tr></thead>
+          <tbody id="b-saeumige-body"></tbody>
         </table>
-        <p class="tablenote">Vollständige Liste über «Säumigen-CSV» — direkt als Empfängerliste für die Erinnerungsmail verwendbar.</p>
       </div>
     </section>
 
-    <!-- ============ ABGLEICH ============ -->
-    <section class="panel" id="p-abgleich">
+    <!-- ================= ABGLEICH ================= -->
+    <section class="panel" id="p-abgleich" aria-labelledby="h-abgleich">
       <div class="pagehead">
-        <h1>Quartals-Abgleich</h1>
-        <span class="meta">Fairgate → Portal · einmal pro Quartal, rund zehn Minuten</span>
+        <h1 id="h-abgleich">Quartals-Abgleich</h1>
+        <span class="meta">Fairgate → Portal · einmal pro Quartal · erst Handarbeit, dann Import</span>
       </div>
       <div class="steps">
-        <div class="step">
-          <h2><span class="stepnum">1</span> Fairgate-Export laden</h2>
-          <div class="fileok" id="fg-datei-status">
-            <span>Noch keine Datei gewählt.</span>
-            <button class="swap" id="fg-datei-waehlen">Datei wählen</button>
+        <div class="card step">
+          <h2><span class="stepnum">1</span>Fairgate-Export laden</h2>
+          <div class="drop" id="dropzone" tabindex="0" role="button" aria-label="Fairgate-Export wählen oder hierher ziehen">
+            <svg class="ic" style="width:20px;height:20px"><use href="#i-upload"/></svg><br>
+            Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken
+            <span class="hint">Kontaktverwaltung → Aktive Kontakte → Exportieren · Haken «für Aktualisierungsimport optimieren»</span>
           </div>
-          <input type="file" id="fg-datei-input" accept=".xlsx" hidden>
-          <p class="hintline">Kontaktverwaltung → Aktive Kontakte → Exportieren („für Aktualisierungsimport optimieren“)</p>
+          <input type="file" id="datei-input" accept=".xlsx" hidden>
         </div>
-        <div class="step">
-          <h2><span class="stepnum">2</span> Helfertool-Daten</h2>
-          <div class="fileok" id="abgleich-helfer-status">Noch keine Daten geladen.</div>
+        <div class="card step">
+          <h2><span class="stepnum">2</span>Helfertool-Daten</h2>
+          <div class="fileok" id="abgleich-helfer-status"><svg class="ic"><use href="#i-info"/></svg><span>Noch nicht abgerufen — «Daten neu abrufen» in der Seitenleiste.</span></div>
         </div>
-        <div class="step">
-          <h2><span class="stepnum">3</span> Ergebnis</h2>
-          <div id="abgleich-ergebnis">
-            <p class="resultlead">Noch kein Abgleich in dieser Sitzung durchgeführt.</p>
-          </div>
+        <div class="card step">
+          <h2><span class="stepnum">3</span>Ergebnis</h2>
+          <div id="abgleich-ergebnis"><div class="empty"><b>Noch kein Abgleich in dieser Sitzung</b>Lade oben den Fairgate-Export — das Ergebnis erscheint hier mit allen Dateien.</div></div>
         </div>
       </div>
     </section>
 
-    <!-- ============ DATENQUALITÄT ============ -->
-    <section class="panel" id="p-dq">
+    <!-- ================= DATENQUALITÄT ================= -->
+    <section class="panel" id="p-dq" aria-labelledby="h-dq">
       <div class="pagehead">
-        <h1>Datenqualität</h1>
-        <span class="meta" id="dq-meta">Wird bei jedem API-Abruf geprüft</span>
+        <h1 id="h-dq">Datenqualität</h1>
+        <span class="meta" id="dq-meta">Wird bei jedem Abruf geprüft</span>
       </div>
-      <ul class="dqlist" id="dq-liste"></ul>
+      <div id="dq-gruppen"></div>
     </section>
 
-    <!-- ============ REGELN ============ -->
-    <section class="panel" id="p-regeln">
+    <!-- ================= REGELN ================= -->
+    <section class="panel" id="p-regeln" aria-labelledby="h-regeln">
       <div class="pagehead">
-        <h1>Regeln</h1>
-        <span class="meta">Einmal einstellen, dann vergessen · bleiben lokal gespeichert</span>
+        <h1 id="h-regeln">Regeln</h1>
+        <span class="meta">Einmal einstellen, dann vergessen — bleiben lokal gespeichert, ohne Personendaten</span>
+        <div class="actions"><button class="btn primary" id="btn-regeln-speichern"><svg class="ic"><use href="#i-check"/></svg>Regeln speichern</button></div>
       </div>
-      <form id="regeln-formular">
-        <div class="panelcard">
-          <h2>Mitglieder-Kategorien</h2>
-          <p class="sub">Welche Fairgate-Kategorien helferpflichtig sind, mit Zielwert und Standardgruppe für Neueintritte.</p>
-          <table class="plaintable ruletable">
-            <caption>Kategorie-Regeln</caption>
-            <thead><tr><th>Fairgate-Kategorie</th><th>Pflichtig</th><th class="num">Zielwert</th><th>Portal-Gruppe</th><th></th></tr></thead>
-            <tbody id="regeln-kategorien"></tbody>
-          </table>
-          <p style="margin-top:10px;"><button type="button" class="btn2" id="regeln-kategorie-hinzu">+ Kategorie hinzufügen</button></p>
-        </div>
-        <div class="panelcard">
-          <h2>Weitere Regeln</h2>
-          <table class="plaintable ruletable">
-            <caption>Weitere Einstellungen</caption>
-            <tbody>
-              <tr><td>Altersgrenze für eigene E-Mail (darunter Eltern-Adresse)</td><td class="num"><input type="number" min="0" id="regeln-altersgrenze"></td></tr>
-              <tr><td>Halbjahresziel (Zwischenziel bis Saisonhälfte)</td><td class="num"><input type="number" min="0" id="regeln-halbjahresziel"></td></tr>
-              <tr><td>Zweitaccount-Erkennung</td><td><b>FG-Nummer in Bemerkung, Gruppe ≠ Mitglied</b></td></tr>
-              <tr><td>Unbekannte mit Einsatz oder Anmeldung</td><td><b>zu Freiwilligen umteilen (Liste in Datenqualität)</b></td></tr>
-            </tbody>
-          </table>
-          <p><button type="submit" class="btn-red">Regeln speichern</button> <span class="regeln-status" id="regeln-status"></span></p>
-        </div>
-      </form>
+      <div class="card section">
+        <h2>Mitglieder-Kategorien</h2>
+        <p class="sub">Welche Fairgate-Kategorien helferpflichtig sind, mit Zielwert und Portal-Gruppe für Neueintritte.</p>
+        <table class="form-table">
+          <thead><tr><th>Fairgate-Kategorie</th><th>Pflichtig</th><th>Zielwert</th><th>Portal-Gruppe</th><th></th></tr></thead>
+          <tbody id="regeln-kategorien"></tbody>
+        </table>
+        <button class="btn ghost" id="btn-kategorie-plus" style="margin-top:10px"><svg class="ic"><use href="#i-plus"/></svg>Kategorie hinzufügen</button>
+      </div>
+      <div class="card section">
+        <h2>Weitere Regeln</h2>
+        <div class="field"><div>Altersgrenze für eigene E-Mail<div class="desc">Darunter wird die Eltern-Adresse aus Fairgate verwendet.</div></div><input type="number" id="regel-altersgrenze" min="0" max="30"></div>
+        <div class="field"><div>Halbjahresziel<div class="desc">Zwischenziel bis zur Saisonhälfte, in Einsätzen.</div></div><input type="number" id="regel-halbjahr" min="0" max="20"></div>
+        <div class="field"><div>Zweitaccount-Erkennung<div class="desc">Fest verdrahtet — Änderung nur im Code.</div></div><div class="fixed">FG-Nummer in Bemerkung, Gruppe ≠ Mitglied</div></div>
+        <div class="field"><div>Unbekannte mit Einsatz oder Anmeldung<div class="desc">Vereinsregel, Umteilung von Hand im Portal.</div></div><div class="fixed">→ Freiwillige</div></div>
+      </div>
     </section>
 
-    <!-- ============ PROTOKOLL ============ -->
-    <section class="panel" id="p-log">
+    <!-- ================= PROTOKOLL ================= -->
+    <section class="panel" id="p-log" aria-labelledby="h-log">
       <div class="pagehead">
-        <h1>Protokoll</h1>
-        <span class="meta">Was das Cockpit wann gemacht hat · hilft beim Quartals-Rhythmus</span>
+        <h1 id="h-log">Protokoll</h1>
+        <span class="meta">Was das Cockpit wann gemacht hat — hilft beim Quartals-Rhythmus</span>
       </div>
-      <p class="hintline"><b>Zum Saisonende:</b> zuerst alle Reports/Exporte ziehen, erst danach im
-        Portal die alten Events zurücksetzen — sonst zählen Vorjahres-Einsätze in <code>plannedValue</code>
-        weiter und das Dashboard zeigt zu hohe Ist-Werte. Das Cockpit kann diese Reihenfolge nur
-        anmahnen, nicht erzwingen.</p>
-      <ul class="loglist num" id="protokoll-liste"></ul>
+      <div class="infobox"><svg class="ic"><use href="#i-info"/></svg><span><b>Zum Saisonende:</b> zuerst alle Reports und Exporte ziehen, erst danach im Portal die alten Events zurücksetzen — sonst zählen Vorjahres-Einsätze weiter und die Ist-Werte hier sind zu hoch. Das Cockpit kann diese Reihenfolge nur anmahnen, nicht erzwingen.</span></div>
+      <div class="card"><ul class="timeline" id="protokoll-liste"></ul></div>
     </section>
-  </div>
+  </main>
 </div>
-
+<div class="toast" id="toast" role="status" hidden></div>
 <script src="/static/app.js"></script>
