@@ -605,7 +605,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   const ok = await ladeStand();
   await ladeProtokoll();
   if (ok && S.daten && S.daten.api_verfuegbar && !geladen()) await abrufen(true);
-  if (gespeichert && gespeichert.step >= 3 && gespeichert.dateiName) {
-    $("wiz-letzter").insertAdjacentHTML("beforeend", `<span class="l">Unterbrochen</span><span>Ein Abgleich mit «${esc(gespeichert.dateiName)}» war in Schritt ${gespeichert.step}. Denselben Export in Schritt 2 nochmals laden — die Häkchen bleiben erhalten.</span>`);
+  if (gespeichert && gespeichert.step >= 2 && gespeichert.step <= 4) {
+    // Läuft der Server noch, hat er den letzten Abgleich im Speicher: dann direkt dort weitermachen.
+    let wieder = null;
+    if (S.daten && S.daten.letzter_abgleich) {   // nur fragen, wenn der Server überhaupt einen hat (kein 404-Rauschen)
+      try { const d = await holeJson("/api/abgleich/letzter"); if (wizRunId(d) === gespeichert.runId) wieder = d; } catch (e) { wieder = null; }
+    }
+    if (wieder) {
+      W.abgleich = wieder;
+      $("dropzone").innerHTML = ic("check") + `<br><b>${esc(W.dateiName || "Fairgate-Export")}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
+      renderPlausi(wieder);
+      if (gespeichert.step >= 3) renderChecklist();
+      wizZeige(gespeichert.step);
+      toast(`Abgleich fortgesetzt bei Schritt ${gespeichert.step}.`);
+    } else if (gespeichert.step >= 3 && gespeichert.dateiName) {
+      $("wiz-letzter").insertAdjacentHTML("beforeend", `<span class="l">Unterbrochen</span><span>Ein Abgleich mit «${esc(gespeichert.dateiName)}» war in Schritt ${gespeichert.step}. Das Cockpit wurde seither neu gestartet — denselben Export in Schritt 2 nochmals laden, die Häkchen bleiben erhalten.</span>`);
+    }
   }
 });

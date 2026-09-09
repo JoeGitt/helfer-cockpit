@@ -396,3 +396,21 @@ def test_regeln_post_mit_email_abweichung(server):
         assert json.loads(r.read())["ok"] is True
     with urllib.request.urlopen(server + "/api/regeln") as r:
         assert json.loads(r.read())["email_abweichung"] == "handarbeit"
+
+
+def test_letzter_abgleich_ist_nach_upload_abrufbar(server):
+    import http.client
+    host, port = server.replace("http://", "").split(":")
+    c = http.client.HTTPConnection(host, int(port))
+    c.request("GET", "/api/abgleich/letzter")
+    assert c.getresponse().status == 404                      # noch kein Abgleich in dieser Sitzung
+    daten = _fairgate_xlsx_bytes([
+        ["x", 2417, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"],
+    ])
+    req = urllib.request.Request(server + "/api/fairgate", data=daten, method="POST")
+    with urllib.request.urlopen(req) as r:
+        d = json.loads(r.read())
+    with urllib.request.urlopen(server + "/api/abgleich/letzter") as r:
+        l = json.loads(r.read())
+    assert l["zusammenfassung"] == d["zusammenfassung"] and l["dateien"] == d["dateien"]
+    assert "handarbeit" in l and "kategorien" in l

@@ -36,6 +36,7 @@ class Zustand:
     fairgate_kategorien: dict = None   # FG → Mitgliedschaft aus dem letzten Fairgate-Export
     fairgate_kontakte: list = None     # Kontakte des letzten Exports (nur im Speicher, für die Kontrolle)
     letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
+    letztes_ergebnis: dict = None      # vollständige Antwort des letzten Abgleichs (für Seiten-Neuladen)
 
 
 def portal_url(z, helper_id):
@@ -173,6 +174,10 @@ def starte_server(zustand, port=0):
             if pfad == "/api/regeln":
                 from dataclasses import asdict
                 return self._json(asdict(lade_regeln(zustand.regeln_pfad)))
+            if pfad == "/api/abgleich/letzter":
+                if not zustand.letztes_ergebnis:
+                    return self._json({"fehler": "In dieser Sitzung wurde noch kein Abgleich gemacht."}, 404)
+                return self._json(zustand.letztes_ergebnis)
             if pfad == "/api/protokoll":
                 return self._json(protokoll.lese(zustand.protokoll_pfad))
             # erzeugte Ausgabedateien im Browser öffnen (nur Dateien direkt im Ausgabe-Ordner)
@@ -280,6 +285,7 @@ def starte_server(zustand, port=0):
                     antwort = _abgleich_json(zustand, ergebnis)
                     antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
                                           "kontakte": str(kontakte_pfad)}
+                    zustand.letztes_ergebnis = antwort
                     zustand.letzter_abgleich = {
                         "zeit": datetime.datetime.now().isoformat(timespec="seconds"),
                         "zusammenfassung": ergebnis.zusammenfassung,
