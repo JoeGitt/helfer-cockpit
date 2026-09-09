@@ -3,6 +3,7 @@
 
   python3 start.py              normaler Start
   python3 start.py --demo       mit anonymisierten Beispieldaten, ohne API-Key
+  python3 start.py --pseudo     mit pseudonymisiertem Vereinsbestand (tests/fixtures/pseudo), ohne API-Key
   python3 start.py --key-reset  API-Key neu erfassen
 """
 import getpass
@@ -46,13 +47,13 @@ def hole_key(reset=False):
 
 
 def main():
-    demo = "--demo" in sys.argv
+    demo = "--demo" in sys.argv or "--pseudo" in sys.argv
     zustand = Zustand(regeln_pfad=KONFIG / "regeln.json",
                       protokoll_pfad=KONFIG / "protokoll.jsonl",
                       ausgabe_dir=Path.cwd() / "Ausgabe",
                       org_slug=ORG_SLUG)
     if demo:
-        fixtures = Path(__file__).parent / "tests" / "fixtures"
+        fixtures = Path(__file__).parent / "tests" / "fixtures" / ("pseudo" if "--pseudo" in sys.argv else "")
         zustand.helpers = json.loads((fixtures / "helpers.json").read_text(encoding="utf-8"))
         zustand.assignments = json.loads((fixtures / "assignments.json").read_text(encoding="utf-8"))
         zustand.stand = "Demo-Daten (fiktiv)"

@@ -1,6 +1,6 @@
 """Liest den Fairgate-Export «Aktive Kontakte» (für Aktualisierungsimport optimiert)."""
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
@@ -23,6 +23,7 @@ class FgKontakt:
     geburtsdatum: str
     kategorie: str
     eltern_email: str
+    alle_emails: list = field(default_factory=list)   # jede Adresse des Kontakts (eigene, Eltern, weitere)
 
 
 def _zelle(zeile, idx):
@@ -55,6 +56,7 @@ def lies_fairgate(pfad):
         i_id, i_vn, i_nn = spalte("Kontakt-ID Verein"), spalte("Vorname"), spalte("Nachname")
         i_mail, i_tel, i_geb = spalte("Primäre E-Mail"), spalte("Handy"), spalte("Geburtsdatum")
         i_kat, i_e1, i_e2 = spalte("Mitgliedschaft"), spalte("E-Mail Eltern 1"), spalte("E-Mail Eltern 2")
+        i_weitere = [spalte(n) for n in ("E-Mail 2", "Mail 2") if spalte(n) is not None]
         kontakte = []
         for zeile in zeilen:
             nummer = _zelle(zeile, i_id)
@@ -70,6 +72,9 @@ def lies_fairgate(pfad):
                 geburtsdatum=_zelle(zeile, i_geb)[:10],
                 kategorie=_zelle(zeile, i_kat),
                 eltern_email=_zelle(zeile, i_e1) or _zelle(zeile, i_e2),
+                alle_emails=[m for m in dict.fromkeys(
+                    [_zelle(zeile, i_mail), _zelle(zeile, i_e1), _zelle(zeile, i_e2)]
+                    + [_zelle(zeile, i) for i in i_weitere]) if m],
             ))
         return kontakte
     finally:

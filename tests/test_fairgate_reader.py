@@ -56,3 +56,14 @@ def test_liest_kontakte_aus_bytesio(tmp_path):
     with io.BytesIO(pfad.read_bytes()) as puffer:
         kontakte = lies_fairgate(puffer)
     assert len(kontakte) == 1 and kontakte[0].fg == "FG-2417"
+
+
+def test_alle_emails_sammelt_jede_adresse(tmp_path):
+    kopf = KOPF + ["E-Mail 2"]
+    pfad = _schreibe(tmp_path, kopf, [
+        ["x", 2417, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied",
+         "mutter@example.ch", "vater@example.ch", "2000-01-01", "zweit@example.ch"],
+    ])
+    k = lies_fairgate(pfad)[0]
+    assert set(k.alle_emails) == {"lina@example.ch", "mutter@example.ch", "vater@example.ch", "zweit@example.ch"}
+    assert k.eltern_email == "mutter@example.ch"

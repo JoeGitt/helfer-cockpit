@@ -109,3 +109,21 @@ def test_handarbeitsliste_html_zeigt_unbekannte_kategorien():
         zusammenfassung="Alles synchron bei 2 geprüften Mitgliedern.")
     html = handarbeitsliste_html(e)
     assert "Vereinsfremd" in html and "NICHT abgeglichen" in html
+
+
+def test_handarbeitsliste_zeigt_kontaktabweichungen_als_info():
+    e = AbgleichErgebnis(zusammenfassung="Alles synchron bei 1 geprüften Mitgliedern.",
+                         kontakt_abweichungen=[{"name": "Lina Brunner", "fg": "FG-1", "helper_id": 1,
+                                                "portal_mail": "alt@example.ch", "fairgate_mail": "neu@example.ch"}])
+    html = handarbeitsliste_html(e)
+    assert "Kontaktdaten weichen ab" in html and "alt@example.ch" in html and "neu@example.ch" in html
+    assert "Nichts zu tun" in html          # Info-Liste ist keine Handarbeit
+
+def test_kontaktabweichungen_csv(tmp_path):
+    from cockpit.exports import schreibe_kontaktabweichungen_csv
+    pfad = tmp_path / "k.csv"
+    n = schreibe_kontaktabweichungen_csv([{"name": "Lina Brunner", "fg": "FG-1", "helper_id": 1,
+                                           "portal_mail": "alt@example.ch", "fairgate_mail": "neu@example.ch"}], pfad)
+    assert n == 1
+    zeilen = list(csv.reader(pfad.open(encoding="utf-8-sig"), delimiter=";"))
+    assert zeilen[0][:4] == ["Name", "FG-Nummer", "E-Mail Portal", "E-Mail Fairgate"] and zeilen[1][2] == "alt@example.ch"

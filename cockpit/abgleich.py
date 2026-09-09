@@ -21,10 +21,11 @@ class ImportZeile:
 
 @dataclass
 class HandarbeitsFall:
-    art: str      # "austritt" | "schluessel"
+    art: str      # "austritt" | "schluessel" | "leerung"
     name: str
     fg: str
     detail: str
+    helper_id: int = None     # Portal-Account, um direkt dorthin zu springen
 
 
 @dataclass
@@ -35,6 +36,8 @@ class AbgleichErgebnis:
     klaerliste: list = field(default_factory=list)
     duplikat_warnungen: list = field(default_factory=list)
     unbekannte_kategorien: list = field(default_factory=list)
+    kontakt_abweichungen: list = field(default_factory=list)   # Info-Liste: E-Mail Portal ≠ Fairgate
+    kategorien: dict = field(default_factory=dict)             # {"pflichtig": {..}, "nicht_pflichtig": {..}, "unbekannt": {..}}
     zusammenfassung: str = ""
     geprueft: int = 0
 
@@ -64,6 +67,20 @@ def _lax(vn, nn, mail):
     return (vn.strip().lower(), nn.strip().lower(), mail.strip().lower())
 
 
+def _fairgate_adressen(k):
+    """Alle Adressen des Kontakts, kleingeschrieben — die Person ist über jede davon erreichbar."""
+    return {m.strip().lower() for m in (list(k.alle_emails) + [k.email, k.eltern_email]) if m}
+
+
+def _gruppen_vereinigt(konto, portal_gruppe):
+    """Gruppen-Spalte für den Update-Import: bestehende Gruppen + Zielgruppe (die Spalte ERSETZT
+    die Gruppenliste, darum immer die Vereinigung schreiben — Spez. 6.3)."""
+    gruppen = list(konto.gruppen)
+    if portal_gruppe and portal_gruppe not in gruppen:
+        gruppen.append(portal_gruppe)
+    return ", ".join(gruppen)
+
+
 def gleiche_ab(kontakte, accounts, regeln, heute=None):
     heute = heute or datetime.date.today()
     e = AbgleichErgebnis(geprueft=len(kontakte))
@@ -88,9 +105,12 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
     unbekannt_fgs = set()          # FGs mit unbekannter Kategorie: Austritt unterdrücken
     unbekannte_kat_zaehler = {}    # Kategoriename -> Anzahl betroffener Kontakte
     regel_namen = {k.name for k in regeln.kategorien}
+    e.kategorien = {"pflichtig": {}, "nicht_pflichtig": {}, "unbekannt": {}}
 
     for k in kontakte:
         regel = regeln.fuer_kategorie(k.kategorie)
+        topf = ("pflichtig" if regel else "nicht_pflichtig" if k.kategorie in regel_namen else "unbekannt")
+        e.kategorien[topf][k.kategorie] = e.kategorien[topf].get(k.kategorie, 0) + 1
         if regel is None:
             if k.kategorie not in regel_namen:
                 # Kategorie steht in KEINER Regel (weder pflichtig noch nicht-pflichtig):
@@ -116,15 +136,21 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
             # FG-Nachtrag (Spez. 6.3/D4, konservativ): exakter, case-sensitiver
             # Tripel-Treffer gegen einen Mitglieds-Portal-Account ohne FG-Nummer. Nur bei
             # leerer Bemerkung automatisch nachtragen — sonst würde der Import sie überschreiben.
-            fg_nachtrag = next((a for a in accounts if not a.fg and a.typ == Typ.MITGLIED
+            # Zusätzlich für UNKLASSIFIZIERTE Accounts (nur Funktionsgruppen, kein Marker — typisch:
+            # von Hand im Portal angelegtes Mitglied): FG nachtragen UND Gruppe «Mitglied» ergänzen.
+            fg_nachtrag = next((a for a in accounts if not a.fg
+                                and a.typ in (Typ.MITGLIED, Typ.UNKLASSIFIZIERT)
                                 and a.vorname == k.vorname and a.nachname == k.nachname
                                 and mail in ({a.email, a.zusatz_email1, a.zusatz_email2} - {""})),
                                None)
             if fg_nachtrag is not None:
                 if not fg_nachtrag.bemerkung:
+                    gruppe = ("" if fg_nachtrag.typ == Typ.MITGLIED
+                              else _gruppen_vereinigt(fg_nachtrag, regel.portal_gruppe))
                     e.korrekturen.append(ImportZeile(
                         vorname=fg_nachtrag.vorname, nachname=fg_nachtrag.nachname,
-                        email=fg_nachtrag.email, zielwert=str(regel.zielwert), bemerkungen=k.fg))
+                        email=fg_nachtrag.email, zielwert=str(regel.zielwert), bemerkungen=k.fg,
+                        gruppe=gruppe))
                 else:
                     e.klaerliste.append(
                         f"{k.vorname} {k.nachname} ({k.fg}): FG-Nachtrag von Hand — "
@@ -149,21 +175,30 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                 gruppe=regel.portal_gruppe, geburtsdatum=k.geburtsdatum,
                 zielwert=str(regel.zielwert), bemerkungen=k.fg))
         else:
-            # Schlüssel-Änderung? Referenz-Schreibweise ist das PORTAL (case-sensitiv).
+            # E-Mail-Abgleich, tolerant: Die Portal-Adresse ist die vom Mitglied selbst
+            # gewählte Login-Adresse. Sie gilt als stimmig, wenn sie IRGENDEINER Adresse des
+            # Fairgate-Kontakts entspricht (eigene, Eltern, weitere; Gross/Klein egal). Die
+            # Altersregel entscheidet nur bei Neueintritten, welche Adresse verwendet wird.
             mail = _ziel_email(k, regeln, heute)
-            portal_mails = {konto.email, konto.zusatz_email1, konto.zusatz_email2} - {""}
-            if mail and mail not in portal_mails:
-                e.handarbeit.append(HandarbeitsFall(
-                    "schluessel", konto.anzeigename, k.fg,
-                    f"E-Mail in Fairgate neu: {mail} (Portal: {konto.email}) — zuerst im "
-                    "Portal nachführen, sonst legt der Import ein Duplikat an."))
+            portal_mails = {m.lower() for m in (konto.email, konto.zusatz_email1, konto.zusatz_email2) if m}
+            if mail and not (portal_mails & _fairgate_adressen(k)):
+                if regeln.email_abweichung == "handarbeit":
+                    e.handarbeit.append(HandarbeitsFall(
+                        "schluessel", konto.anzeigename, k.fg,
+                        f"E-Mail in Fairgate: {mail} — im Portal: {konto.email}. Zuerst im Portal "
+                        "nachführen, sonst legt ein Import mit der neuen Adresse ein Duplikat an.",
+                        helper_id=konto.id))
+                else:
+                    e.kontakt_abweichungen.append({
+                        "name": konto.anzeigename, "fg": k.fg, "helper_id": konto.id,
+                        "portal_mail": konto.email, "fairgate_mail": mail})
             # Feld-Leerung: Fairgate hat das Feld geleert, Portal noch nicht — leere
             # Zellen überschreiben im Import nichts, also nur von Hand (Spez. 6.3).
             if not k.telefon and konto.telefon:
                 e.handarbeit.append(HandarbeitsFall(
                     "leerung", konto.anzeigename, k.fg,
                     f"Telefon in Fairgate geleert (Portal: {konto.telefon}) — Feld im Portal "
-                    "von Hand leeren, der Import kann das nicht."))
+                    "von Hand leeren, der Import kann das nicht.", helper_id=konto.id))
             # Wert-Korrekturen (Update-Import, Tripel aus dem Portal, Gruppen-Spalte leer!)
             # Bemerkungen bleiben leer: eine leere Zelle überschreibt im Import nichts, das
             # Tripel (Vorname/Nachname/E-Mail) ist der Match-Schlüssel (Spez. 6.3).
@@ -185,7 +220,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
             e.handarbeit.append(HandarbeitsFall(
                 "austritt", konto.anzeigename, fg,
                 "In Fairgate nicht mehr als pflichtiges Mitglied geführt — im Portal "
-                "deaktivieren (der Import löscht nichts)."))
+                "deaktivieren (der Import löscht nichts).", helper_id=konto.id))
 
     # Zweitaccounts/Freiwillige mit Zielwert ≠ 0 → Korrektur auf 0 (Spez. D2/D7).
     # Bemerkungen bleiben leer (siehe oben) — eine leere Zelle überschreibt nichts.

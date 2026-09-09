@@ -38,10 +38,12 @@ def test_austritt_auf_handarbeitsliste():
     e = gleiche_ab([], [_acc(1, "Weg", "Gezogen", "w@example.ch", "FG-1")], REGELN, HEUTE)
     assert len(e.handarbeit) == 1 and e.handarbeit[0].art == "austritt"
 
-def test_schluessel_aenderung_bei_neuer_mail():
+def test_schluessel_aenderung_bei_neuer_mail_mit_strenger_regel():
+    # Standard-Regel ist «info» (Abweichung nur auflisten) — die strenge Regel führt sie als Handarbeit.
     konto = _acc(1, "Lina", "Brunner", "alt@example.ch", "FG-1")
     k = _kontakt(1, "Lina", "Brunner", mail="neu@example.ch", geb="2000-01-01")
-    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    streng = Regeln(kategorien=REGELN.kategorien, email_abweichung="handarbeit")
+    e = gleiche_ab([k], [konto], streng, HEUTE)
     assert len(e.handarbeit) == 1 and e.handarbeit[0].art == "schluessel"
 
 def test_duplikat_waechter_case_insensitiv():
@@ -226,3 +228,60 @@ def test_duplikat_waechter_beruecksichtigt_zusatz_email():
     k = _kontakt(9, "lina", "brunner", mail="lina@example.ch", geb="2000-01-01")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
     assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1
+
+
+# ---------------------------------------------------------------------------
+# E-Mail-Toleranz, FG-Nachtrag für Unklassifizierte, Kategorien-Übersicht, helper_id
+# ---------------------------------------------------------------------------
+
+def _kontakt_mails(nr, vn, nn, eigene, eltern, geb="2000-01-01"):
+    k = _kontakt(nr, vn, nn, mail=eigene, geb=geb, eltern=eltern)
+    k.alle_emails = [m for m in (eigene, eltern) if m]
+    return k
+
+def test_portal_auf_elternmail_ist_keine_schluesselaenderung():
+    konto = _acc(1, "Lina", "Brunner", "eltern@example.ch", "FG-1")          # Portal läuft auf Eltern-Mail
+    k = _kontakt_mails(1, "Lina", "Brunner", "lina@example.ch", "eltern@example.ch")  # erwachsen
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    assert e.handarbeit == [] and e.kontakt_abweichungen == []
+
+def test_gross_kleinschreibung_ist_keine_abweichung():
+    konto = _acc(1, "Lina", "Brunner", "Lina@Example.ch", "FG-1")
+    k = _kontakt_mails(1, "Lina", "Brunner", "lina@example.ch", "")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)
+    assert e.handarbeit == [] and e.kontakt_abweichungen == []
+
+def test_echte_abweichung_wird_info_oder_handarbeit_je_nach_regel():
+    konto = _acc(1, "Lina", "Brunner", "alt@example.ch", "FG-1")
+    k = _kontakt_mails(1, "Lina", "Brunner", "neu@example.ch", "")
+    e = gleiche_ab([k], [konto], REGELN, HEUTE)                        # Standard: info
+    assert e.handarbeit == []
+    assert len(e.kontakt_abweichungen) == 1
+    ab = e.kontakt_abweichungen[0]
+    assert ab["fg"] == "FG-1" and ab["portal_mail"] == "alt@example.ch" and ab["fairgate_mail"] == "neu@example.ch"
+    assert ab["helper_id"] == 1
+    streng = Regeln(kategorien=REGELN.kategorien, email_abweichung="handarbeit")
+    e2 = gleiche_ab([k], [konto], streng, HEUTE)
+    assert len(e2.handarbeit) == 1 and e2.handarbeit[0].art == "schluessel" and e2.handarbeit[0].helper_id == 1
+    assert e2.kontakt_abweichungen == []
+
+def test_fg_nachtrag_fuer_unklassifizierten_account_mit_gruppen_merge():
+    unklass = _acc(5, "Neu", "Kind", "neu@example.ch", None, gruppen=("Foodbox", "Infrastrukur"), ziel=2.0)
+    k = _kontakt_mails(9, "Neu", "Kind", "neu@example.ch", "", geb="2000-01-01")
+    e = gleiche_ab([k], [unklass], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.duplikat_warnungen == []
+    assert len(e.korrekturen) == 1
+    z = e.korrekturen[0]
+    assert z.bemerkungen == "FG-9" and z.zielwert == "2"
+    assert set(z.gruppe.split(", ")) == {"Foodbox", "Infrastrukur", "Mitglied"}   # Vereinigung, nie Ersatz
+
+def test_austritt_traegt_helper_id():
+    e = gleiche_ab([], [_acc(7, "Weg", "Gezogen", "w@example.ch", "FG-1")], REGELN, HEUTE)
+    assert e.handarbeit[0].art == "austritt" and e.handarbeit[0].helper_id == 7
+
+def test_kategorien_uebersicht():
+    ks = [_kontakt(1, "A", "B", kategorie="Aktivmitglied"), _kontakt(2, "C", "D", kategorie="Aktivmitglied"),
+          _kontakt(3, "E", "F", kategorie="Passivmitglied"), _kontakt(4, "G", "H", kategorie="Gönner")]
+    e = gleiche_ab(ks, [], REGELN, HEUTE)
+    assert e.kategorien == {"pflichtig": {"Aktivmitglied": 2}, "nicht_pflichtig": {"Passivmitglied": 1},
+                            "unbekannt": {"Gönner": 1}}

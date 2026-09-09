@@ -12,7 +12,7 @@ from .checks import run_checks, Hinweis
 from .fairgate_reader import lies_fairgate, FalscheDatei
 from .abgleich import gleiche_ab
 from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsliste_html,
-                      schreibe_gesamtexport_xlsx)
+                      schreibe_gesamtexport_xlsx, schreibe_kontaktabweichungen_csv)
 from .settings import lade_regeln, lade_regeln_mit_fehler, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
 
@@ -34,6 +34,8 @@ class Zustand:
     assignments_fehler: bool = False   # D6 degradiert: letzter Einsätze-Abruf ist gescheitert
     org_slug: str = "pfadi-winterthur-handball"   # Teil der Portal-URL (Helfer-Detailseite)
     fairgate_kategorien: dict = None   # FG → Mitgliedschaft aus dem letzten Fairgate-Export
+    fairgate_kontakte: list = None     # Kontakte des letzten Exports (nur im Speicher, für die Kontrolle)
+    letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
 
 
 def portal_url(z, helper_id):
@@ -49,11 +51,30 @@ def _account_json(z, a):
             "portal_url": portal_url(z, a.id)}
 
 
+def _abgleich_json(z, ergebnis):
+    """Gemeinsame JSON-Form für Abgleich und Kontrolle."""
+    return {
+        "zusammenfassung": ergebnis.zusammenfassung,
+        "geprueft": ergebnis.geprueft,
+        "neueintritte": len(ergebnis.neueintritte),
+        "korrekturen": len(ergebnis.korrekturen),
+        "handarbeit": [{**vars(h), "portal_url": portal_url(z, h.helper_id) if h.helper_id else None}
+                       for h in ergebnis.handarbeit],
+        "klaerliste": ergebnis.klaerliste,
+        "duplikat_warnungen": ergebnis.duplikat_warnungen,
+        "unbekannte_kategorien": ergebnis.unbekannte_kategorien,
+        "kontakt_abweichungen": [{**a, "portal_url": portal_url(z, a["helper_id"]) if a.get("helper_id") else None}
+                                 for a in ergebnis.kontakt_abweichungen],
+        "kategorien": ergebnis.kategorien,
+    }
+
+
 def baue_dashboard(z):
     if not z.helpers:
         return {"stand": "", "fehler": z.fehler, "kennzahlen": {}, "mitglieder": [],
                 "hinweise": [], "wer_leistet": {}, "alle_accounts": [],
-                "kategorie_erfuellung": []}
+                "kategorie_erfuellung": [], "api_verfuegbar": z.api_client_factory is not None,
+                "letzter_abgleich": z.letzter_abgleich}
     regeln, regeln_fehler = lade_regeln_mit_fehler(z.regeln_pfad)
     accounts = [classify(h) for h in z.helpers]
     mitglieder = build_mitglieder(accounts)
@@ -107,6 +128,8 @@ def baue_dashboard(z):
             "mitglieder": m_json, "wer_leistet": wer,
             "alle_accounts": [_account_json(z, a) for a in accounts],
             "kategorie_erfuellung": kategorie_erfuellung,
+            "api_verfuegbar": z.api_client_factory is not None,
+            "letzter_abgleich": z.letzter_abgleich,
             "hinweise": [{"code": h.code, "schweregrad": h.schweregrad,
                           "text": h.text, "betroffene": h.betroffene} for h in hinweise]}
 
@@ -237,34 +260,77 @@ def starte_server(zustand, port=0):
                     accounts = [classify(h) for h in (zustand.helpers or [])]
                     ergebnis = gleiche_ab(kontakte, accounts, regeln)
                     zustand.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
+                    zustand.fairgate_kontakte = kontakte
                     zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
                     heute = datetime.date.today().isoformat()
                     import_pfad = zustand.ausgabe_dir / f"import-{heute}.xlsx"
                     schreibe_import_xlsx(ergebnis.neueintritte + ergebnis.korrekturen, import_pfad)
                     liste_pfad = zustand.ausgabe_dir / f"handarbeitsliste-{heute}.html"
                     liste_pfad.write_text(handarbeitsliste_html(ergebnis), encoding="utf-8")
+                    kontakte_pfad = zustand.ausgabe_dir / f"kontaktdaten-abweichungen-{heute}.csv"
+                    schreibe_kontaktabweichungen_csv(ergebnis.kontakt_abweichungen, kontakte_pfad)
+                    dateien = [import_pfad.name, liste_pfad.name, kontakte_pfad.name]
                     protokoll.logge(zustand.protokoll_pfad, "abgleich", {
                         "geprueft": ergebnis.geprueft,
                         "neueintritte": len(ergebnis.neueintritte),
                         "korrekturen": len(ergebnis.korrekturen),
                         "handarbeit": len(ergebnis.handarbeit),
-                        "dateien": [import_pfad.name, liste_pfad.name]})
-                    return self._json({
+                        "abweichungen": len(ergebnis.kontakt_abweichungen),
+                        "dateien": dateien})
+                    antwort = _abgleich_json(zustand, ergebnis)
+                    antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
+                                          "kontakte": str(kontakte_pfad)}
+                    zustand.letzter_abgleich = {
+                        "zeit": datetime.datetime.now().isoformat(timespec="seconds"),
                         "zusammenfassung": ergebnis.zusammenfassung,
+                        "geprueft": ergebnis.geprueft,
                         "neueintritte": len(ergebnis.neueintritte),
                         "korrekturen": len(ergebnis.korrekturen),
-                        "handarbeit": [vars(h) for h in ergebnis.handarbeit],
-                        "klaerliste": ergebnis.klaerliste,
-                        "duplikat_warnungen": ergebnis.duplikat_warnungen,
-                        "unbekannte_kategorien": ergebnis.unbekannte_kategorien,
-                        "dateien": {"import": str(import_pfad), "liste": str(liste_pfad)}})
+                        "handarbeit": len(ergebnis.handarbeit),
+                        "klaerliste": len(ergebnis.klaerliste),
+                        "dateien": dateien}
+                    return self._json(antwort)
                 except (FalscheDatei, ValueError) as e:
                     return self._json({"fehler": str(e)}, 400)
+            if u.path == "/api/abgleich/kontrolle":
+                # Schritt 4 des geführten Abgleichs: Portal frisch holen und mit denselben
+                # Fairgate-Kontakten nochmals vergleichen — erwartet «Alles synchron».
+                if not zustand.fairgate_kontakte:
+                    return self._json({"fehler": "Noch kein Fairgate-Export in dieser Sitzung geladen — "
+                                       "die Kontrolle braucht denselben Export wie der Abgleich."}, 400)
+                if zustand.api_client_factory is not None:
+                    try:
+                        client = zustand.api_client_factory()
+                        neue = client.helpers()
+                        if neue:
+                            zustand.helpers = neue
+                            zustand.stand = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                    except Exception as e:
+                        return self._json({"fehler": f"Portal-Daten konnten nicht frisch geholt werden: {e}"}, 502)
+                regeln = lade_regeln(zustand.regeln_pfad)
+                accounts = [classify(h) for h in (zustand.helpers or [])]
+                try:
+                    ergebnis = gleiche_ab(zustand.fairgate_kontakte, accounts, regeln)
+                except ValueError as e:
+                    return self._json({"fehler": str(e)}, 400)
+                offen = {"neueintritte": len(ergebnis.neueintritte),
+                         "korrekturen": len(ergebnis.korrekturen),
+                         "handarbeit": len(ergebnis.handarbeit),
+                         "klaerliste": len(ergebnis.klaerliste)}
+                synchron = not any(offen.values())
+                protokoll.logge(zustand.protokoll_pfad, "kontrolle", {"synchron": synchron, **offen})
+                antwort = _abgleich_json(zustand, ergebnis)
+                antwort.update({"synchron": synchron, "offen": offen})
+                return self._json(antwort)
             if u.path == "/api/regeln":
                 daten = json.loads(self._body())
+                email_abweichung = daten.get("email_abweichung") or "info"
+                if email_abweichung not in ("info", "handarbeit"):
+                    return self._json({"fehler": "email_abweichung muss «info» oder «handarbeit» sein."}, 400)
                 regeln = Regeln(kategorien=[KategorieRegel(**k) for k in daten["kategorien"]],
                                 altersgrenze=int(daten["altersgrenze"]),
-                                halbjahresziel=int(daten["halbjahresziel"]))
+                                halbjahresziel=int(daten["halbjahresziel"]),
+                                email_abweichung=email_abweichung)
                 speichere_regeln(regeln, zustand.regeln_pfad)
                 return self._json({"ok": True})
             if u.path == "/api/export/saeumige":

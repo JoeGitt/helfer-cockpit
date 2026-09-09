@@ -73,3 +73,18 @@ def test_d3_und_d9():
     accounts = [classify(h) for h in helpers + [doppel, fremd]]
     codes = _codes(run_checks(accounts, build_mitglieder(accounts), None))
     assert "D3" in codes and "D9" in codes
+
+
+def test_d10_namensgleiche_accounts_mit_und_ohne_fg():
+    helpers = json.loads((FIXTURES / "helpers.json").read_text(encoding="utf-8"))
+    neu = dict(helpers[0]); neu["id"] = 555; neu["email"] = "lina.neu@example.ch"
+    neu["adminRemarks"] = ""; neu["groups"] = [{"id": 9, "name": "Foodbox"}]     # Neuregistrierung ohne FG
+    accounts = [classify(h) for h in helpers + [neu]]
+    d10 = [h for h in run_checks(accounts, build_mitglieder(accounts), None) if h.code == "D10"]
+    assert len(d10) == 1 and d10[0].schweregrad == "warnung"
+    assert any("Lina Brunner" in b for b in d10[0].betroffene)
+
+def test_d10_feuert_nicht_ohne_namensdoppel():
+    helpers = json.loads((FIXTURES / "helpers.json").read_text(encoding="utf-8"))
+    accounts = [classify(h) for h in helpers]
+    assert not [h for h in run_checks(accounts, build_mitglieder(accounts), None) if h.code == "D10"]

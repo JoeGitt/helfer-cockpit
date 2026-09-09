@@ -1,4 +1,4 @@
-"""Datenqualitäts-Checks D1–D9 gemäss Spezifikation Kap. 6.4."""
+"""Datenqualitäts-Checks D1–D10 gemäss Spezifikation Kap. 6.4 (D10: Ergänzung 09.09.2026)."""
 from dataclasses import dataclass
 from .model import Typ, GRUPPE_UNBEKANNTE
 
@@ -92,5 +92,27 @@ def run_checks(accounts, mitglieder, assignments=None):
         hinweise.append(Hinweis("D9", "warnung",
             "Account entspricht keinem gültigen Muster — klären und umteilen.",
             [a.anzeigename for a in d9]))
+
+    # D10: namensgleiche Accounts, einer mit FG-Nummer, einer ohne → vermutlich hat sich die
+    # Person mit neuer E-Mail NEU registriert statt die Adresse zu ändern. Der neue Account
+    # sammelt Einsätze, die dem Mitglied nicht zugerechnet werden.
+    nach_name = {}
+    for a in accounts:
+        nach_name.setdefault((a.vorname.strip().lower(), a.nachname.strip().lower()), []).append(a)
+    d10 = []
+    for gruppe in nach_name.values():
+        mit = [a for a in gruppe if a.fg]
+        ohne = [a for a in gruppe if not a.fg]
+        if mit and ohne:
+            for a in ohne:
+                einsaetze = a.num_ok + a.num_confirmed
+                d10.append(f"{a.anzeigename} (ohne FG, {einsaetze} Einsätze) — daneben "
+                           f"{', '.join(m.fg for m in mit)}")
+    if d10:
+        hinweise.append(Hinweis("D10", "warnung",
+            "Namensgleiche Accounts mit und ohne FG-Nummer — vermutlich Neuregistrierung mit "
+            "neuer E-Mail. Im Portal zusammenführen (Einsätze des neuen Accounts gehen dem "
+            "Mitglied sonst verloren).",
+            sorted(d10)))
 
     return hinweise

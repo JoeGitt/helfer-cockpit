@@ -344,3 +344,55 @@ def test_gesamtexport_hat_blatt_alle_helfenden(server):
     ws = wb["Alle Helfenden"]
     assert ws.max_row == 11  # Kopf + 10 Accounts
     assert ws.cell(1, 1).value == "ID" and "Typ" in [c.value for c in ws[1]]
+
+
+def test_stand_meldet_api_verfuegbarkeit_und_letzten_abgleich(tmp_path):
+    z = _zustand(tmp_path)
+    d = baue_dashboard(z)
+    assert d["api_verfuegbar"] is False and d["letzter_abgleich"] is None
+
+
+def test_fairgate_liefert_kategorien_abweichungen_und_kontrolle(server):
+    daten = _fairgate_xlsx_bytes([
+        ["x", 2417, "lina.neu@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"],
+        ["x", 1083, "noah@example.ch", "Noah", "Keller", "", "Junioren", None, None, "2000-01-01"],
+        ["x", 3105, "sara@example.ch", "Sara", "Meili", "", "Aktivmitglied", None, None, "2000-01-01"],
+        ["x", 8888, "x@example.ch", "Gast", "Gönner", "", "Gönner", None, None, "2000-01-01"],
+    ])
+    req = urllib.request.Request(server + "/api/fairgate", data=daten, method="POST")
+    with urllib.request.urlopen(req) as r:
+        d = json.loads(r.read())
+    assert d["kategorien"]["pflichtig"] == {"Aktivmitglied": 2, "Junioren": 1}
+    assert d["kategorien"]["unbekannt"] == {"Gönner": 1}
+    assert d["kontakt_abweichungen"][0]["fg"] == "FG-2417"           # Lina: Portal lina@, Fairgate lina.neu@
+    assert all("portal_url" in h and "helper_id" in h for h in d["handarbeit"])
+    assert d["dateien"]["kontakte"].endswith(".csv")
+    with urllib.request.urlopen(server + "/api/stand") as r:
+        st = json.loads(r.read())
+    assert st["letzter_abgleich"]["zusammenfassung"] == d["zusammenfassung"]
+    # Kontrolle: gleiche Kontakte gegen den (unveränderten) Portal-Bestand → nicht synchron,
+    # weil Korrekturen (Zweitaccount/Freiwillige mit Zielwert) weiterhin anstehen
+    req = urllib.request.Request(server + "/api/abgleich/kontrolle", data=b"", method="POST")
+    with urllib.request.urlopen(req) as r:
+        k = json.loads(r.read())
+    assert k["synchron"] is False and k["offen"]["korrekturen"] >= 1
+    assert "zusammenfassung" in k
+
+
+def test_kontrolle_ohne_fairgate_liefert_400(server):
+    import http.client
+    host, port = server.replace("http://", "").split(":")
+    c = http.client.HTTPConnection(host, int(port))
+    c.request("POST", "/api/abgleich/kontrolle", body=b"")
+    assert c.getresponse().status == 400
+
+
+def test_regeln_post_mit_email_abweichung(server):
+    body = json.dumps({"kategorien": [], "altersgrenze": 16, "halbjahresziel": 1,
+                       "email_abweichung": "handarbeit"}).encode()
+    req = urllib.request.Request(server + "/api/regeln", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        assert json.loads(r.read())["ok"] is True
+    with urllib.request.urlopen(server + "/api/regeln") as r:
+        assert json.loads(r.read())["email_abweichung"] == "handarbeit"

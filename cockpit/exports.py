@@ -117,4 +117,23 @@ def handarbeitsliste_html(e):
     if not (schluessel or austritte or leerungen or e.duplikat_warnungen or e.klaerliste
             or e.unbekannte_kategorien):
         teile.append("<p>Nichts zu tun — alles synchron. 🎉</p>")
+    abw = getattr(e, "kontakt_abweichungen", [])
+    if abw:
+        teile.append("<h2>Kontaktdaten weichen ab (Info — keine Handarbeit nötig)</h2>"
+                     "<p>Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. "
+                     "Falls Fairgate veraltet ist, dort nachführen; im Portal ist nichts zu tun.</p><ul>")
+        teile += [f"<li>{html_mod.escape(a['name'])} ({html_mod.escape(a['fg'])}): Portal "
+                  f"{html_mod.escape(a['portal_mail'])} · Fairgate {html_mod.escape(a['fairgate_mail'])}</li>"
+                  for a in abw]
+        teile.append("</ul>")
     return "\n".join(teile)
+
+
+def schreibe_kontaktabweichungen_csv(abweichungen, pfad):
+    """Info-Liste «E-Mail Portal ≠ Fairgate» als CSV — zum Nachführen in Fairgate."""
+    with Path(pfad).open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(["Name", "FG-Nummer", "E-Mail Portal", "E-Mail Fairgate"])
+        for a in abweichungen:
+            w.writerow([a["name"], a["fg"], a["portal_mail"], a["fairgate_mail"]])
+    return len(abweichungen)

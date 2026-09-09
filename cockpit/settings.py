@@ -18,6 +18,7 @@ class Regeln:
     kategorien: list
     altersgrenze: int = 16
     halbjahresziel: int = 1
+    email_abweichung: str = "info"     # "info": nur auflisten | "handarbeit": als Schlüssel-Änderung führen
 
     def fuer_kategorie(self, name):
         for k in self.kategorien:
@@ -49,7 +50,10 @@ def lade_regeln_mit_fehler(pfad):
             kategorien=[KategorieRegel(**k) for k in daten.get("kategorien", [])],
             altersgrenze=int(daten.get("altersgrenze", 16)),
             halbjahresziel=int(daten.get("halbjahresziel", 1)),
+            email_abweichung=(daten.get("email_abweichung") or "info"),
         )
+        if regeln.email_abweichung not in ("info", "handarbeit"):
+            raise ValueError("email_abweichung muss «info» oder «handarbeit» sein")
         return regeln, ""
     except (json.JSONDecodeError, TypeError, KeyError, ValueError, AttributeError) as e:
         return _standard(), (

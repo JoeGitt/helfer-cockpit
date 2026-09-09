@@ -50,3 +50,10 @@ def test_speichern_ist_atomar_keine_tmp_datei_bleibt_liegen(tmp_path):
     speichere_regeln(r, pfad)
     reste = list(tmp_path.glob("*.tmp"))
     assert reste == [] and pfad.exists()
+
+
+def test_email_abweichung_standard_und_roundtrip(tmp_path):
+    assert lade_regeln(tmp_path / "x.json").email_abweichung == "info"
+    r = Regeln(kategorien=[], email_abweichung="handarbeit")
+    speichere_regeln(r, tmp_path / "r.json")
+    assert lade_regeln(tmp_path / "r.json").email_abweichung == "handarbeit"
