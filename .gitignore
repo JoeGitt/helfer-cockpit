@@ -6,3 +6,4 @@ Ausgabe/
 !tests/fixtures/*.xlsx
 .DS_Store
 venv/
+tests/fixtures/pseudo/
