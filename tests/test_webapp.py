@@ -414,3 +414,16 @@ def test_letzter_abgleich_ist_nach_upload_abrufbar(server):
         l = json.loads(r.read())
     assert l["zusammenfassung"] == d["zusammenfassung"] and l["dateien"] == d["dateien"]
     assert "handarbeit" in l and "kategorien" in l
+
+
+def test_fairgate_liefert_import_vorschau(server):
+    daten = _fairgate_xlsx_bytes([
+        ["x", 9999, "neu@example.ch", "Neu", "Kind", "0790000000", "Aktivmitglied", None, None, "2000-01-01"],
+    ])
+    req = urllib.request.Request(server + "/api/fairgate", data=daten, method="POST")
+    with urllib.request.urlopen(req) as r:
+        d = json.loads(r.read())
+    v = d["import_vorschau"]
+    neu = next(z for z in v if z["art"] == "Neueintritt")
+    assert neu["name"] == "Neu Kind" and "FG-9999" in neu["aenderungen"] and "Zielwert 2" in neu["aenderungen"]
+    assert any(z["art"] == "Korrektur" for z in v)          # Zweitaccount/Freiwillige mit Zielwert → 0

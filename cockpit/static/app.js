@@ -42,6 +42,7 @@ function formatZeit(iso) {
   const d = new Date(iso); if (isNaN(d)) return esc(iso);
   return d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
 }
+function orgSlug() { const a = S.daten && S.daten.alle_accounts[0]; const m = a && String(a.portal_url).match(/helfereinsatz\.ch\/([^/]+)\//); return m ? m[1] : "pfadi-winterthur-handball"; }
 function plink(url, text = "Portal") { return url ? `<a class="plink" href="${esc(url)}" target="_blank" rel="noopener" title="Im Helferportal öffnen">${ic("external", "sm")}${esc(text)}</a>` : ""; }
 
 const fehlerQuellen = new Map();
@@ -443,10 +444,28 @@ function renderChecklist() {
   const aKeys = [...hand.map((h) => h.key), ...warn.map((w) => w.key)];
   html += sek("A · Im Portal von Hand", `Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
   if (aKeys.length) html += `<ul class="checklist">${hand.map((h) => clItem(h.key, `${ART_LABEL[h.art] || h.art}: ${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}${warn.map((w) => clItem(w.key, `${w.k} — von Hand prüfen`, w.t)).join("")}</ul>`;
-  // B · Import
+  // B · Import — das Herzstück, darum als eigene erklärende Karte
   const bKeys = nImport ? ["imp"] : [];
-  html += sek("B · Import-Datei hochladen", nImport ? `Im Portal: <b>Helfende → Import</b>, Datei wählen, hochladen. Enthält ${d.neueintritte} Neueintritte und ${d.korrekturen} Korrekturen. Leere Zellen überschreiben nichts.` : "Keine Neueintritte oder Korrekturen — kein Import nötig.", bKeys, bKeys.every((k) => W.checks[k]));
-  if (nImport) html += `<ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen (${nImport} Zeilen)`, "", `<a class="btn" href="${ausgabeLink(imp)}">${ic("download")}${esc(imp)}</a>`)}</ul>`;
+  html += sek("B · Import-Datei ins Portal hochladen", nImport ? "" : "Keine Neueintritte oder Korrekturen — dieses Mal ist kein Import nötig.", bKeys, bKeys.every((k) => W.checks[k]));
+  if (nImport) {
+    const pfad = d.dateien.import;
+    const vorschau = d.import_vorschau || [];
+    html += `<div class="importcard">
+      <div class="importhead">
+        <div><div class="importtitle">${esc(imp)}</div><div class="sub">${d.neueintritte} Neueintritte · ${d.korrekturen} Korrekturen · liegt im Ordner «Ausgabe»</div></div>
+        <a class="btn primary" href="${ausgabeLink(imp)}">${ic("download")}Import-Datei herunterladen</a>
+      </div>
+      <div class="importpfad num" title="Vollständiger Pfad">${esc(pfad)}</div>
+      <ol class="howto compact">
+        <li><span class="n">1</span><div><b>Herunterladen</b><span>Knopf oben — die Datei landet im Downloads-Ordner (oder direkt aus dem Ordner «Ausgabe» nehmen).</span></div></li>
+        <li><span class="n">2</span><div><b>Im Helferportal anmelden</b><span>Menü <b>Helfende</b> → <b>Import</b>. ${plink(`https://app.helfereinsatz.ch/${esc(orgSlug())}/de/helpers`, "Helfende im Portal öffnen")}</span></div></li>
+        <li><span class="n">3</span><div><b>Datei wählen und hochladen</b><span>Das Portal erkennt bestehende Personen an Vorname + Nachname + E-Mail und aktualisiert nur die gefüllten Felder; neue Personen werden angelegt. Es wird nichts gelöscht.</span></div></li>
+        <li><span class="n">4</span><div><b>Hier abhaken</b><span>Erst danach zur Kontrolle — sie prüft, ob der Import angekommen ist.</span></div></li>
+      </ol>
+      ${vorschau.length ? `<details class="more"><summary>Was in der Datei steht (${vorschau.length} Zeilen)</summary><table class="data" style="font-size:12.5px;margin-top:8px"><thead><tr><th>Person</th><th>Art</th><th>Änderungen</th></tr></thead><tbody>${vorschau.map((z) => `<tr><td>${esc(z.name)}</td><td><span class="typ ${z.art === "Neueintritt" ? "mitglied" : ""}">${esc(z.art)}</span></td><td class="sub">${esc(z.aenderungen)}</td></tr>`).join("")}</tbody></table></details>` : ""}
+    </div>
+    <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
+  }
   // C · Fairgate
   const cKeys = d.klaerliste.map((_, i) => `k:${i}`);
   html += sek("C · In Fairgate nachtragen", d.klaerliste.length ? "Diese Punkte kann nur Fairgate lösen — beim nächsten Abgleich rutschen sie automatisch nach." : "", cKeys, cKeys.every((k) => W.checks[k]));

@@ -67,7 +67,24 @@ def _abgleich_json(z, ergebnis):
         "kontakt_abweichungen": [{**a, "portal_url": portal_url(z, a["helper_id"]) if a.get("helper_id") else None}
                                  for a in ergebnis.kontakt_abweichungen],
         "kategorien": ergebnis.kategorien,
+        "import_vorschau": _import_vorschau(ergebnis),
     }
+
+
+def _import_vorschau(ergebnis):
+    """Was in der Import-Datei steht — damit niemand Excel öffnen muss, um es zu wissen."""
+    def felder(z):
+        teile = []
+        if z.gruppe: teile.append(f"Gruppe {z.gruppe}")
+        if z.zielwert: teile.append(f"Zielwert {z.zielwert}")
+        if z.telefon: teile.append(f"Telefon {z.telefon}")
+        if z.bemerkungen: teile.append(f"Bemerkung {z.bemerkungen}")
+        if z.email and z in ergebnis.neueintritte: teile.append(f"E-Mail {z.email}")
+        return ", ".join(teile)
+    return ([{"name": f"{z.vorname} {z.nachname}".strip(), "art": "Neueintritt", "aenderungen": felder(z)}
+             for z in ergebnis.neueintritte]
+            + [{"name": f"{z.vorname} {z.nachname}".strip(), "art": "Korrektur", "aenderungen": felder(z)}
+               for z in ergebnis.korrekturen])
 
 
 def baue_dashboard(z):
