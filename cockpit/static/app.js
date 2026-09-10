@@ -84,22 +84,27 @@ async function ladeStand() {
   try { anwenden(await holeJson("/api/stand")); zeigeFehler("stand-transport", null); return true; }
   catch (e) { zeigeFehler("stand-transport", e.message); return false; }
 }
-let abrufLaeuft = false;
-async function abrufen(still = false) {
-  if (abrufLaeuft) return false;
-  abrufLaeuft = true;
-  const btn = $("btn-abrufen");
-  btn.disabled = true; btn.querySelector(".ic").classList.add("spin"); btn.querySelector("span").textContent = "Holt …";
-  let ok = false;
-  try {
-    const d = await holeJson("/api/abruf", { method: "POST" });
-    anwenden(d); zeigeFehler("abruf-transport", null);
-    ok = !d.fehler;
-    if (ok && !still) toast(`Abgerufen: ${d.alle_accounts.length} Accounts, ${d.mitglieder.length} Mitglieder.`);
-    ladeProtokoll();
-  } catch (e) { zeigeFehler("abruf-transport", e.message); }
-  finally { abrufLaeuft = false; btn.disabled = false; btn.querySelector(".ic").classList.remove("spin"); btn.querySelector("span").textContent = "Neu abrufen"; }
-  return ok;
+// Ein laufender Abruf wird von weiteren Aufrufern abgewartet, nie abgewiesen — sonst meldet
+// z. B. Schritt 1 des Abgleichs «konnte nicht geholt werden», obwohl der Start-Abruf nur noch läuft.
+let abrufPromise = null;
+let letzterAbrufFehler = "";
+function abrufen(still = false) {
+  if (abrufPromise) return abrufPromise;
+  abrufPromise = (async () => {
+    const btn = $("btn-abrufen");
+    btn.disabled = true; btn.querySelector(".ic").classList.add("spin"); btn.querySelector("span").textContent = "Holt …";
+    let ok = false;
+    try {
+      const d = await holeJson("/api/abruf", { method: "POST" });
+      anwenden(d); zeigeFehler("abruf-transport", null);
+      ok = !d.fehler; letzterAbrufFehler = d.fehler || "";
+      if (ok && !still) toast(`Abgerufen: ${d.alle_accounts.length} Accounts, ${d.mitglieder.length} Mitglieder.`);
+      ladeProtokoll();
+    } catch (e) { letzterAbrufFehler = e.message; zeigeFehler("abruf-transport", e.message); }
+    finally { btn.disabled = false; btn.querySelector(".ic").classList.remove("spin"); btn.querySelector("span").textContent = "Neu abrufen"; abrufPromise = null; }
+    return ok;
+  })();
+  return abrufPromise;
 }
 async function ladeRegeln() {
   try { S.regeln = await holeJson("/api/regeln"); befuelleRegeln(); zeigeFehler("regeln-transport", null); }
@@ -390,14 +395,17 @@ function wizStartAusVerlauf(liste) {
 async function wizStart() {
   wizZeige(1);
   const st = $("wiz-1-status");
-  st.className = "statusline busy"; st.innerHTML = ic("refresh") + "<span>Portal-Bestand wird geholt …</span>";
+  st.className = "statusline busy"; st.innerHTML = ic("refresh") + "<span>Portal-Bestand wird geholt … (bei mehreren hundert Accounts dauert das einige Sekunden)</span>";
+  W.portalOk = false;
+  if (S.daten && S.daten.api_verfuegbar) await abrufen(true);
   W.portalOk = geladen();
-  if (S.daten && S.daten.api_verfuegbar) W.portalOk = await abrufen(true) || geladen();
   if (W.portalOk) {
     const d = S.daten;
     st.className = "statusline ok"; st.innerHTML = ic("check") + `<span><b>${d.alle_accounts.length} Accounts</b> aus dem Portal (${d.mitglieder.length} Mitglieder) · Stand ${esc(d.stand)}</span>`;
   } else {
-    st.className = "statusline err"; st.innerHTML = ic("alert") + "<span>Portal-Bestand konnte nicht geholt werden — siehe Meldung oben. Nochmals versuchen: links «Neu abrufen».</span>";
+    const grund = letzterAbrufFehler || (S.daten && S.daten.fehler) || "keine Verbindung zur API oder kein API-Key hinterlegt";
+    st.className = "statusline err"; st.innerHTML = ic("alert") + `<span><b>Portal-Bestand konnte nicht geholt werden:</b> ${esc(grund)} <button class="btn" id="wiz-btn-retry" style="margin-left:8px">${ic("refresh")}Nochmals versuchen</button></span>`;
+    $("wiz-btn-retry").addEventListener("click", wizStart);
   }
   pruefeSchritt1();
 }
