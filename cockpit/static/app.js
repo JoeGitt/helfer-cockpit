@@ -8,7 +8,7 @@ const S = {
   k: { filter: "alle", suche: "", sort: { key: "status", dir: "asc" }, offen: new Set() },
   h: { filter: "alle", suche: "", sort: { key: "name", dir: "asc" } },
 };
-// Geführter Abgleich: step 0 = Start, 1–4 = Schritte, 5 = fertig. checks = abgehakte Punkte
+// Geführter Abgleich: step 0 = Start, 1 = Daten, 2 = Abarbeiten, 3 = Kontrolle, 4 = fertig. checks = abgehakte Punkte
 // (nur Schlüssel wie "h:3", keine Personendaten) — bleiben im Browser-Speicher erhalten.
 const W = { step: 0, abgleich: null, checks: {}, ack: false, runId: null, dateiName: "" };
 const WIZ_KEY = "hc2-abgleich";
@@ -349,16 +349,17 @@ function wizLaden() {
 }
 function wizRunId(d) { return `${d.geprueft}|${d.zusammenfassung}|${basename((d.dateien || {}).import || "")}`; }
 
+const FERTIG = 4;
 function wizZeige(step) {
   W.step = step; wizSpeichern();
   $("wiz-start").hidden = step !== 0;
-  [1, 2, 3, 4].forEach((n) => { $(`wiz-${n}`).hidden = step !== n; });
-  $("wiz-fertig").hidden = step !== 5;
+  [1, 2, 3].forEach((n) => { $(`wiz-${n}`).hidden = step !== n; });
+  $("wiz-fertig").hidden = step !== FERTIG;
   W.maxStep = Math.max(W.maxStep || 0, step);
   document.querySelectorAll("#wiz-steps li").forEach((li) => {
     const n = Number(li.dataset.step);
-    li.dataset.state = step === 5 || n < step ? "fertig" : n === step ? "aktiv" : "offen";
-    const erreichbar = n <= (W.maxStep || 0) && step !== 5 && step !== 0;
+    li.dataset.state = step === FERTIG || n < step ? "fertig" : n === step ? "aktiv" : "offen";
+    const erreichbar = n <= (W.maxStep || 0) && step !== FERTIG && step !== 0;
     li.classList.toggle("klickbar", erreichbar);
     li.setAttribute("tabindex", erreichbar ? "0" : "-1");
     li.setAttribute("role", erreichbar ? "button" : "");
@@ -368,7 +369,7 @@ function wizZeige(step) {
 function wizTabKlick(li) {
   const n = Number(li.dataset.step);
   if (!li.classList.contains("klickbar")) return;
-  if (n === 3 && W.abgleich) renderChecklist();
+  if (n === 2 && W.abgleich) renderChecklist();
   wizZeige(n);
 }
 function renderWizardStart() {
@@ -390,26 +391,26 @@ async function wizStart() {
   wizZeige(1);
   const st = $("wiz-1-status");
   st.className = "statusline busy"; st.innerHTML = ic("refresh") + "<span>Portal-Bestand wird geholt …</span>";
-  $("wiz-btn-1").disabled = true;
-  let ok = geladen();
-  if (S.daten && S.daten.api_verfuegbar) ok = await abrufen(true) || geladen();
-  if (ok) {
-    const d = S.daten, kritisch = d.hinweise.filter((h) => h.schweregrad === "kritisch").length;
-    st.className = "statusline ok"; st.innerHTML = ic("check") + `<span><b>${d.alle_accounts.length} Accounts</b> geholt (${d.mitglieder.length} Mitglieder) · Stand ${esc(d.stand)}${kritisch ? ` · <b style="color:var(--red-ink)">${kritisch} kritische Punkte</b>` : " · keine kritischen Punkte"}</span>`;
-    renderDQ($("wiz-1-dq"), null, true);
-    const rest = d.hinweise.length - kritisch;
-    if (rest) $("wiz-1-dq").insertAdjacentHTML("beforeend", `<details class="more"><summary>${rest} weitere Hinweise (Warnungen und Infos) — werden im Abgleich berücksichtigt</summary><div id="wiz-1-dq-rest" style="margin-top:8px"></div></details>`);
-    if (rest) { const tmp = document.createElement("div"); const kopie = S.daten.hinweise; S.daten.hinweise = kopie.filter((h) => h.schweregrad !== "kritisch"); renderDQ(tmp, null, false); S.daten.hinweise = kopie; $("wiz-1-dq-rest").innerHTML = tmp.innerHTML; }
-    $("wiz-btn-1").disabled = false;
+  W.portalOk = geladen();
+  if (S.daten && S.daten.api_verfuegbar) W.portalOk = await abrufen(true) || geladen();
+  if (W.portalOk) {
+    const d = S.daten;
+    st.className = "statusline ok"; st.innerHTML = ic("check") + `<span><b>${d.alle_accounts.length} Accounts</b> aus dem Portal (${d.mitglieder.length} Mitglieder) · Stand ${esc(d.stand)}</span>`;
   } else {
     st.className = "statusline err"; st.innerHTML = ic("alert") + "<span>Portal-Bestand konnte nicht geholt werden — siehe Meldung oben. Nochmals versuchen: links «Neu abrufen».</span>";
   }
+  pruefeSchritt1();
+}
+function pruefeSchritt1() {
+  const unbekannt = W.abgleich && Object.keys((W.abgleich.kategorien || {}).unbekannt || {}).length;
+  $("wiz-btn-2").disabled = !(W.portalOk && W.abgleich && (!unbekannt || W.ack));
 }
 async function fairgateHochladen(datei) {
   if (!datei) return;
   const dz = $("dropzone");
   dz.innerHTML = ic("refresh", "spin") + `<br>Wird geprüft: <b>${esc(datei.name)}</b> …`;
   $("wiz-btn-2").disabled = true; $("wiz-2-plausi").innerHTML = "";
+  if (!W.portalOk && geladen()) W.portalOk = true;
   try {
     const d = await holeJson("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
     zeigeFehler("fairgate", null);
@@ -435,7 +436,7 @@ function renderPlausi(d) {
   let html = `<div class="plausi">${teile.join("")}</div>`;
   if (unbekannt.length) html += `<label class="ack"><input type="checkbox" id="wiz-ack" ${W.ack ? "checked" : ""}><span>Diese Kategorien stehen in keiner Regel und werden <b>nicht abgeglichen</b>. Wenn das Mitglieder sind, zuerst unter Einstellungen → Regeln ergänzen und den Export nochmals laden. Sonst hier bestätigen, dass das so gewollt ist.</span></label>`;
   $("wiz-2-plausi").innerHTML = html;
-  const pruefe = () => { W.ack = !unbekannt.length || ($("wiz-ack") && $("wiz-ack").checked); $("wiz-btn-2").disabled = !W.ack; wizSpeichern(); };
+  const pruefe = () => { W.ack = !unbekannt.length || ($("wiz-ack") && $("wiz-ack").checked); wizSpeichern(); pruefeSchritt1(); };
   if ($("wiz-ack")) $("wiz-ack").addEventListener("change", pruefe);
   pruefe();
 }
@@ -445,10 +446,13 @@ function clItem(key, titel, detail, aktionen = "") {
 }
 function renderChecklist() {
   const d = W.abgleich; if (!d) return;
-  $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Reihenfolge ist Pflicht: erst die Punkte im Portal, dann die Import-Datei hochladen, dann Fairgate — sonst entstehen Duplikate.`;
+  $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Reihenfolge: erst die Punkte im Portal, dann die Import-Datei hochladen, dann Fairgate — sonst entstehen Duplikate.`;
   const reihenfolge = ["schluessel", "austritt", "leerung"];
   const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` })).sort((a, b) => reihenfolge.indexOf(a.art) - reihenfolge.indexOf(b.art));
-  const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })), ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" }))];
+  const portalOnly = (S.daten ? S.daten.hinweise : []).filter((h) => ["D3", "D10"].includes(h.code));
+  const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })),
+    ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" })),
+    ...portalOnly.flatMap((h) => h.betroffene.map((b, i) => ({ key: `d:${h.code}:${i}`, t: `${b} — ${h.text}`, k: h.code === "D3" ? "Doppelter Mitglieds-Account" : "Neuregistrierung?" })))];
   const nImport = d.neueintritte + d.korrekturen, imp = basename(d.dateien.import), liste = basename(d.dateien.liste), kont = basename(d.dateien.kontakte || "");
   const sek = (titel, hint, items, cntOk) => `<div class="cl-section"><h3>${titel} <span class="cnt ${cntOk ? "ok" : ""}">${items.length ? `${items.filter((k) => W.checks[k]).length} / ${items.length}` : "nichts zu tun"}</span></h3>${hint ? `<p class="hint">${hint}</p>` : ""}</div>`;
   let html = "";
@@ -474,7 +478,7 @@ function renderChecklist() {
         <li><span class="n">3</span><div><b>Datei wählen und hochladen</b><span>Das Portal erkennt bestehende Personen an Vorname + Nachname + E-Mail und aktualisiert nur die gefüllten Felder; neue Personen werden angelegt. Es wird nichts gelöscht.</span></div></li>
         <li><span class="n">4</span><div><b>Hier abhaken</b><span>Erst danach zur Kontrolle — sie prüft, ob der Import angekommen ist.</span></div></li>
       </ol>
-      ${vorschau.length ? `<details class="more"><summary>Was in der Datei steht (${vorschau.length} Zeilen)</summary><table class="data" style="font-size:12.5px;margin-top:8px"><thead><tr><th>Person</th><th>Art</th><th>Änderungen</th></tr></thead><tbody>${vorschau.map((z) => `<tr><td>${esc(z.name)}</td><td><span class="typ ${z.art === "Neueintritt" ? "mitglied" : ""}">${esc(z.art)}</span></td><td class="sub">${esc(z.aenderungen)}</td></tr>`).join("")}</tbody></table></details>` : ""}
+      ${vorschau.length ? `<details class="more"><summary>Was in der Datei steht (${vorschau.length} Zeilen)</summary><table class="data" style="font-size:12.5px;margin-top:8px"><thead><tr><th>Person</th><th>Art</th><th>Warum und was</th></tr></thead><tbody>${vorschau.map((z) => `<tr><td>${esc(z.name)}</td><td><span class="typ ${z.art === "Neueintritt" ? "mitglied" : ""}">${esc(z.art)}</span></td><td class="sub"><b style="color:var(--ink)">${esc(z.grund || "")}</b>${z.grund ? " — " : ""}${esc(z.aenderungen)}</td></tr>`).join("")}</tbody></table></details>` : ""}
     </div>
     <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
@@ -482,7 +486,9 @@ function renderChecklist() {
   const cKeys = d.klaerliste.map((_, i) => `k:${i}`);
   html += sek("C · In Fairgate nachtragen", d.klaerliste.length ? "Diese Punkte kann nur Fairgate lösen — beim nächsten Abgleich rutschen sie automatisch nach." : "", cKeys, cKeys.every((k) => W.checks[k]));
   if (cKeys.length) html += `<ul class="checklist">${d.klaerliste.map((t, i) => clItem(`k:${i}`, t, "")).join("")}</ul>`;
-  // Info
+  // Info: möglicher Zweitaccount u. ä. — keine Häkchen
+  const hinweise = d.hinweise || [];
+  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((t) => `<li><span></span><div class="t"><span>${esc(t)}</span></div><div class="a"></div></li>`).join("")}</ul></details>`;
   const abw = d.kontakt_abweichungen || [];
   if (abw.length) html += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
   $("wiz-3-liste").innerHTML = html;
@@ -510,14 +516,14 @@ async function wizKontrolle() {
     ladeStand(); ladeProtokoll();
     if (d.synchron) {
       $("wiz-fertig-text").textContent = `${d.zusammenfassung} Nächster Abgleich in rund drei Monaten — der Verlauf unter Einstellungen erinnert dich an das Datum.`;
-      W.checks = {}; W.abgleich = null; W.runId = null; wizZeige(5);
+      W.checks = {}; W.abgleich = null; W.runId = null; wizZeige(FERTIG);
       toast("Alles synchron — Abgleich abgeschlossen.");
     } else {
       const o = d.offen;
       el.innerHTML = `<div class="statusline err">${ic("alert")}<span><b>Noch nicht synchron:</b> ${o.handarbeit} Handarbeit · ${o.neueintritte} Neueintritte · ${o.korrekturen} Korrekturen · ${o.klaerliste} Klärfälle offen.</span></div>
         <p class="hint" style="margin:10px 0 0">Typische Gründe: Import-Datei noch nicht hochgeladen, ein Punkt im Portal noch nicht erledigt, oder das Portal braucht einen Moment. Die Checkliste wird mit dem aktuellen Stand neu aufgebaut — bereits Erledigtes bleibt abgehakt.</p>
         <div class="wiz-actions" style="margin-top:12px"><button class="btn primary" id="wiz-btn-nochmal">Checkliste aktualisieren</button><button class="btn" id="wiz-btn-kontrolle2">${ic("refresh")}Nochmals prüfen</button></div>`;
-      $("wiz-btn-nochmal").addEventListener("click", () => { W.abgleich = { ...W.abgleich, ...d, dateien: W.abgleich.dateien }; renderChecklist(); wizZeige(3); });
+      $("wiz-btn-nochmal").addEventListener("click", () => { W.abgleich = { ...W.abgleich, ...d, dateien: W.abgleich.dateien }; renderChecklist(); wizZeige(2); });
       $("wiz-btn-kontrolle2").addEventListener("click", wizKontrolle);
     }
   } catch (e) {
@@ -526,7 +532,7 @@ async function wizKontrolle() {
     $("wiz-btn-kontrolle3").addEventListener("click", wizKontrolle);
   }
 }
-function wizNeu() { W.maxStep = 0; W.checks = {}; W.abgleich = null; W.runId = null; W.ack = false; W.dateiName = ""; wizSpeichern(); $("wiz-2-plausi").innerHTML = ""; $("dropzone").innerHTML = `${ic("upload")}<br>Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken`; wizZeige(0); }
+function wizNeu() { W.maxStep = 0; W.portalOk = false; W.checks = {}; W.abgleich = null; W.runId = null; W.ack = false; W.dateiName = ""; wizSpeichern(); $("wiz-2-plausi").innerHTML = ""; $("dropzone").innerHTML = `${ic("upload")}<br>Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken`; wizZeige(0); }
 
 // ------------------------------------------------------------------ Regeln / Verlauf ----
 function befuelleRegeln() {
@@ -599,13 +605,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelectorAll("#chips-helfende .chip").forEach((c) => c.addEventListener("click", () => { S.h.filter = c.dataset.typ; document.querySelectorAll("#chips-helfende .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); renderTabelleH(); }));
   $("suche-helfende").addEventListener("input", (e) => { S.h.suche = e.target.value; renderTabelleH(); });
   bindeSort("tab-helfende", S.h.sort, renderTabelleH);
-  bindeChips($("dq-gruppen")); bindeChips($("wiz-1-dq"));
+  bindeChips($("dq-gruppen"));
 
   // Geführter Abgleich
   $("wiz-btn-start").addEventListener("click", wizStart);
-  $("wiz-btn-1").addEventListener("click", () => wizZeige(2));
-  $("wiz-btn-2").addEventListener("click", () => { renderChecklist(); wizZeige(3); });
-  $("wiz-btn-3").addEventListener("click", () => { $("wiz-4-ergebnis").innerHTML = `<div class="wiz-actions" style="margin-top:0"><button class="btn primary" id="wiz-btn-kontrolle">${ic("refresh")}Kontrolle starten</button></div>`; $("wiz-btn-kontrolle").addEventListener("click", wizKontrolle); wizZeige(4); });
+  $("wiz-btn-2").addEventListener("click", () => { renderChecklist(); wizZeige(2); });
+  $("wiz-btn-3").addEventListener("click", () => { $("wiz-4-ergebnis").innerHTML = `<div class="wiz-actions" style="margin-top:0"><button class="btn primary" id="wiz-btn-kontrolle">${ic("refresh")}Kontrolle starten</button></div>`; $("wiz-btn-kontrolle").addEventListener("click", wizKontrolle); wizZeige(3); });
   $("wiz-btn-kontrolle").addEventListener("click", wizKontrolle);
   $("wiz-btn-neu").addEventListener("click", wizNeu);
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => wizZeige(Number(b.dataset.goto))));
@@ -638,7 +643,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const ok = await ladeStand();
   await ladeProtokoll();
   if (ok && S.daten && S.daten.api_verfuegbar && !geladen()) await abrufen(true);
-  if (gespeichert && gespeichert.step >= 2 && gespeichert.step <= 4) {
+  if (gespeichert && gespeichert.step >= 1 && gespeichert.step <= 3 && gespeichert.runId) {
     // Läuft der Server noch, hat er den letzten Abgleich im Speicher: dann direkt dort weitermachen.
     let wieder = null;
     if (S.daten && S.daten.letzter_abgleich) {   // nur fragen, wenn der Server überhaupt einen hat (kein 404-Rauschen)
@@ -648,12 +653,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       W.abgleich = wieder;
       $("dropzone").innerHTML = ic("check") + `<br><b>${esc(W.dateiName || "Fairgate-Export")}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
       renderPlausi(wieder);
-      if (gespeichert.step >= 3) renderChecklist();
+      W.portalOk = geladen();
+      $("wiz-1-status").className = "statusline ok"; $("wiz-1-status").innerHTML = ic("check") + `<span><b>${S.daten.alle_accounts.length} Accounts</b> aus dem Portal · Stand ${esc(S.daten.stand)}</span>`;
+      if (gespeichert.step >= 2) renderChecklist();
       W.maxStep = gespeichert.step;
-      wizZeige(gespeichert.step);
+      wizZeige(Math.max(gespeichert.step, 1));
+      pruefeSchritt1();
       toast(`Abgleich fortgesetzt bei Schritt ${gespeichert.step}.`);
-    } else if (gespeichert.step >= 3 && gespeichert.dateiName) {
-      $("wiz-letzter").insertAdjacentHTML("beforeend", `<span class="l">Unterbrochen</span><span>Ein Abgleich mit «${esc(gespeichert.dateiName)}» war in Schritt ${gespeichert.step}. Das Cockpit wurde seither neu gestartet — denselben Export in Schritt 2 nochmals laden, die Häkchen bleiben erhalten.</span>`);
+    } else if (gespeichert.step >= 2 && gespeichert.dateiName) {
+      $("wiz-letzter").insertAdjacentHTML("beforeend", `<span class="l">Unterbrochen</span><span>Ein Abgleich mit «${esc(gespeichert.dateiName)}» war in Schritt ${gespeichert.step}. Das Cockpit wurde seither neu gestartet — denselben Export in Schritt 1 nochmals laden, die Häkchen bleiben erhalten.</span>`);
     }
   }
 });

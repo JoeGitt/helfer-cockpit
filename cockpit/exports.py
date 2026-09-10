@@ -117,6 +117,11 @@ def handarbeitsliste_html(e):
     if not (schluessel or austritte or leerungen or e.duplikat_warnungen or e.klaerliste
             or e.unbekannte_kategorien):
         teile.append("<p>Nichts zu tun — alles synchron. 🎉</p>")
+    hinweise = getattr(e, "hinweise", [])
+    if hinweise:
+        teile.append("<h2>Hinweise (keine Handarbeit nötig)</h2><ul>")
+        teile += [f"<li>{html_mod.escape(t)}</li>" for t in hinweise]
+        teile.append("</ul>")
     abw = getattr(e, "kontakt_abweichungen", [])
     if abw:
         teile.append("<h2>Kontaktdaten weichen ab (Info — keine Handarbeit nötig)</h2>"

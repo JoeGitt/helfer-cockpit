@@ -566,62 +566,54 @@
     <section class="panel active" id="p-abgleich" aria-labelledby="h-abgleich">
       <div class="pagehead">
         <h1 id="h-abgleich">Quartals-Abgleich</h1>
-        <span class="meta">Fairgate → Portal · einmal pro Quartal · vier Schritte, rund zehn Minuten</span>
+        <span class="meta">Fairgate → Portal · einmal pro Quartal · drei Schritte</span>
       </div>
       <ol class="wiz-steps" id="wiz-steps" aria-label="Fortschritt">
-        <li data-step="1"><span class="n">1</span>Portal-Bestand</li>
-        <li data-step="2"><span class="n">2</span>Fairgate-Export</li>
-        <li data-step="3"><span class="n">3</span>Abarbeiten</li>
-        <li data-step="4"><span class="n">4</span>Kontrolle</li>
+        <li data-step="1"><span class="n">1</span>Daten zusammenführen</li>
+        <li data-step="2"><span class="n">2</span>Abarbeiten</li>
+        <li data-step="3"><span class="n">3</span>Kontrolle</li>
       </ol>
 
       <div class="card wiz-card" id="wiz-start">
         <h2>Bereit für den nächsten Abgleich</h2>
-        <p class="intro">Der Abgleich holt den Portal-Bestand, vergleicht ihn mit dem Fairgate-Export und führt dich Punkt für Punkt durch das, was im Portal und in Fairgate zu tun ist. Am Ende prüft er sein eigenes Ergebnis.</p>
+        <p class="intro">Der Abgleich holt den Portal-Bestand, vergleicht ihn mit dem Fairgate-Export und sagt dir pro Person, was zu tun ist. Das meiste erledigt eine einzige Import-Datei — von Hand bleibt nur, was der Import nicht kann. Am Ende prüft er sein eigenes Ergebnis.</p>
         <div class="letzter" id="wiz-letzter"></div>
         <ol class="howto">
-          <li><span class="n">1</span><div><b>Portal-Bestand</b><span>wird automatisch geholt und auf Datenqualität geprüft</span></div></li>
-          <li><span class="n">2</span><div><b>Fairgate-Export</b><span>du lädst die Excel-Datei aus Fairgate — der Klickpfad steht dabei</span></div></li>
-          <li><span class="n">3</span><div><b>Abarbeiten</b><span>Checkliste in der richtigen Reihenfolge, jeder Punkt mit Link ins Portal</span></div></li>
-          <li><span class="n">4</span><div><b>Kontrolle</b><span>Portal nochmals holen — erwartet: «Alles synchron»</span></div></li>
+          <li><span class="n">1</span><div><b>Daten zusammenführen</b><span>Portal wird automatisch geholt, du legst den Fairgate-Export ab</span></div></li>
+          <li><span class="n">2</span><div><b>Abarbeiten</b><span>Import-Datei hochladen, Rest als Checkliste mit Link ins Portal</span></div></li>
+          <li><span class="n">3</span><div><b>Kontrolle</b><span>Portal nochmals holen — erwartet: «Alles synchron»</span></div></li>
         </ol>
         <div class="wiz-actions"><button class="btn primary" id="wiz-btn-start"><svg class="ic"><use href="#i-swap"/></svg>Abgleich starten</button></div>
       </div>
 
       <div class="card wiz-card" id="wiz-1" hidden>
-        <h2>Schritt 1 · Portal-Bestand</h2>
-        <p class="intro">Die Helfenden werden direkt aus dem Helferportal geholt. Kritische Punkte in der Datenqualität solltest du vor dem Abgleich kennen — sie werden dir hier gezeigt.</p>
+        <h2>Schritt 1 · Daten zusammenführen</h2>
+        <p class="intro">Erst mit beiden Seiten weiss das Cockpit, wer Mitglied ist, wer Zweitaccount und wer nur so aussieht. Das Portal wird automatisch geholt — du brauchst nur den Fairgate-Export.</p>
         <div class="statusline busy" id="wiz-1-status"><svg class="ic"><use href="#i-refresh"/></svg><span>Portal-Bestand wird geholt …</span></div>
-        <div id="wiz-1-dq"></div>
-        <div class="wiz-actions"><span class="spacer"></span><button class="btn primary" id="wiz-btn-1" disabled>Weiter zu Schritt 2<svg class="ic"><use href="#i-chev"/></svg></button></div>
-      </div>
-
-      <div class="card wiz-card" id="wiz-2" hidden>
-        <h2>Schritt 2 · Fairgate-Export laden</h2>
-        <p class="intro">In Fairgate: <b>Kontaktverwaltung → Aktive Kontakte → Aktionsmenü → Exportieren</b>, Haken bei «für Aktualisierungsimport optimieren» (bringt die Kontakt-ID mit). Die Excel-Datei dann hier ablegen.</p>
+        <div class="cl-section"><h3>Fairgate-Export</h3><p class="hint">In Fairgate: <b>Kontaktverwaltung → Aktive Kontakte → Aktionsmenü → Exportieren</b>, Haken bei «für Aktualisierungsimport optimieren» (bringt die Kontakt-ID mit). Die Excel-Datei dann hier ablegen.</p></div>
         <div class="drop" id="dropzone" tabindex="0" role="button" aria-label="Fairgate-Export wählen oder hierher ziehen">
           <svg class="ic" style="width:20px;height:20px"><use href="#i-upload"/></svg><br>
           Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken
         </div>
         <input type="file" id="datei-input" accept=".xlsx" hidden>
         <div id="wiz-2-plausi"></div>
-        <div class="wiz-actions"><button class="btn ghost" data-goto="1"><svg class="ic back"><use href="#i-chev"/></svg>Zurück</button><span class="spacer"></span><button class="btn primary" id="wiz-btn-2" disabled>Weiter zu Schritt 3<svg class="ic"><use href="#i-chev"/></svg></button></div>
+        <div class="wiz-actions"><span class="spacer"></span><button class="btn primary" id="wiz-btn-2" disabled>Weiter zum Abarbeiten<svg class="ic"><use href="#i-chev"/></svg></button></div>
       </div>
 
-      <div class="card wiz-card" id="wiz-3" hidden>
-        <h2>Schritt 3 · Abarbeiten</h2>
+      <div class="card wiz-card" id="wiz-2" hidden>
+        <h2>Schritt 2 · Abarbeiten</h2>
         <p class="intro" id="wiz-3-lead"></p>
         <div class="progressbar"><i id="wiz-3-progress"></i></div>
         <div class="sub" id="wiz-3-progress-text"></div>
         <div id="wiz-3-liste"></div>
-        <div class="wiz-actions"><button class="btn ghost" data-goto="2"><svg class="ic back"><use href="#i-chev"/></svg>Zurück</button><span class="spacer"></span><button class="btn primary" id="wiz-btn-3" disabled>Weiter zur Kontrolle<svg class="ic"><use href="#i-chev"/></svg></button></div>
+        <div class="wiz-actions"><button class="btn ghost" data-goto="1"><svg class="ic back"><use href="#i-chev"/></svg>Zurück</button><span class="spacer"></span><button class="btn primary" id="wiz-btn-3" disabled>Weiter zur Kontrolle<svg class="ic"><use href="#i-chev"/></svg></button></div>
       </div>
 
-      <div class="card wiz-card" id="wiz-4" hidden>
-        <h2>Schritt 4 · Kontrolle</h2>
+      <div class="card wiz-card" id="wiz-3" hidden>
+        <h2>Schritt 3 · Kontrolle</h2>
         <p class="intro">Das Cockpit holt den Portal-Bestand nochmals frisch und vergleicht ihn mit demselben Fairgate-Export. Wenn alles erledigt ist, meldet es «Alles synchron».</p>
         <div id="wiz-4-ergebnis"><div class="wiz-actions" style="margin-top:0"><button class="btn primary" id="wiz-btn-kontrolle"><svg class="ic"><use href="#i-refresh"/></svg>Kontrolle starten</button></div></div>
-        <div class="wiz-actions"><button class="btn ghost" data-goto="3"><svg class="ic back"><use href="#i-chev"/></svg>Zurück zur Checkliste</button><span class="spacer"></span></div>
+        <div class="wiz-actions"><button class="btn ghost" data-goto="2"><svg class="ic back"><use href="#i-chev"/></svg>Zurück zur Checkliste</button><span class="spacer"></span></div>
       </div>
 
       <div class="card done-card" id="wiz-fertig" hidden>

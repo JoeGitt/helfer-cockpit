@@ -46,12 +46,16 @@ def test_schluessel_aenderung_bei_neuer_mail_mit_strenger_regel():
     e = gleiche_ab([k], [konto], streng, HEUTE)
     assert len(e.handarbeit) == 1 and e.handarbeit[0].art == "schluessel"
 
-def test_duplikat_waechter_case_insensitiv():
-    konto = _acc(1, "Lina", "Brunner", "lina@example.ch", None)  # Portal ohne FG
+def test_exakter_treffer_case_insensitiv_wird_fg_nachtrag():
+    # Portal-Mitglied ohne FG, in Fairgate mit gleicher Mail und (anders geschriebenem) Namen:
+    # das IST das Mitglied → FG per Import nachtragen, kein Neueintritt, keine Warnung.
+    konto = _acc(1, "Lina", "Brunner", "lina@example.ch", None)
     mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
     k = _kontakt(9, "lina", "brunner", mail="lina@example.ch", geb="2000-01-01")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
-    assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1
+    assert e.neueintritte == [] and e.duplikat_warnungen == [] and e.klaerliste == []
+    z = next(z for z in e.korrekturen if z.vorname == "Lina")
+    assert z.bemerkungen == "FG-9" and z.email == "lina@example.ch"      # Portal-Schreibweise als Schlüssel
 
 def test_zielwert_korrektur_fuer_zweitaccount():
     zweit = _acc(2, "Rita", "Gerber", "r@example.ch", "FG-1", gruppen=("Freiwillige",), ziel=2.0)
@@ -167,8 +171,9 @@ def test_unbekannte_kategorie_neueintritt_wird_nicht_angelegt():
 
 # ---- I6: FG-Nachtrag nur für Mitglieds-Accounts + Namens-Warnung ---------
 
-def test_fg_nachtrag_ignoriert_nicht_mitglieds_accounts():
-    # Konto ohne FG, aber Typ Freiwillig (nicht Mitglied) — kein automatischer FG-Nachtrag.
+def test_freiwilliger_mit_exaktem_treffer_wird_mitglied():
+    # Freiwilligen-Account, der in Fairgate ein pflichtiges Mitglied ist und noch keinen
+    # Mitglieds-Account hat → wird per Import zum Mitglied (FG, Gruppe, Zielwert).
     konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
                       "adminRemarks": "", "groups": [{"id": 1, "name": "Freiwillige"}],
                       "stateCache": {"requestedValue": 0, "plannedValue": 0}})
@@ -176,12 +181,12 @@ def test_fg_nachtrag_ignoriert_nicht_mitglieds_accounts():
     k = FgKontakt(fg="FG-7", vorname="Lina", nachname="Brunner", email="lina@example.ch",
                  telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
-    assert e.korrekturen == []
-    assert len(e.duplikat_warnungen) == 1
-    assert "namensgleicher" in e.duplikat_warnungen[0].lower()
+    z = next(z for z in e.korrekturen if z.vorname == "Lina")
+    assert z.bemerkungen == "FG-7" and z.zielwert == "2" and z.gruppe == "Mitglied"
+    assert e.neueintritte == [] and e.duplikat_warnungen == []
 
 
-def test_namensgleicher_account_ohne_fg_wird_gewarnt_nicht_importiert():
+def test_namensgleicher_account_ohne_fg_wird_klaerfall_nicht_importiert():
     konto = classify({"id": 1, "firstName": "Noah", "lastName": "Keller", "email": "alt@example.ch",
                       "adminRemarks": "", "groups": [{"id": 1, "name": "Mitglied"}],
                       "stateCache": {"requestedValue": 0, "plannedValue": 0}})
@@ -189,9 +194,8 @@ def test_namensgleicher_account_ohne_fg_wird_gewarnt_nicht_importiert():
     k = FgKontakt(fg="FG-8", vorname="Noah", nachname="Keller", email="neu@example.ch",
                  telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
-    assert e.neueintritte == [] and e.korrekturen == [] and e.klaerliste == []
-    assert len(e.duplikat_warnungen) == 1
-    assert "Noah Keller" in e.duplikat_warnungen[0]
+    assert e.neueintritte == [] and not any(z.vorname == "Noah" for z in e.korrekturen)
+    assert len(e.klaerliste) == 1 and "Noah Keller" in e.klaerliste[0] and "FG-8" in e.klaerliste[0]
 
 
 # ---- Minor: Geburtsdatum auch DD.MM.YYYY, unparseable -> Klärliste ------
@@ -219,7 +223,7 @@ def test_geburtsdatum_unparsebar_loest_keinen_austritt_aus():
 
 # ---- Minor: Duplikat-Wächter-Set um zusatz_email1/2 erweitert -----------
 
-def test_duplikat_waechter_beruecksichtigt_zusatz_email():
+def test_zusatz_email_zaehlt_als_exakter_treffer():
     konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "primaer@example.ch",
                       "additionalEmail1": "lina@example.ch", "adminRemarks": "",
                       "groups": [{"id": 1, "name": "Mitglied"}],
@@ -227,7 +231,9 @@ def test_duplikat_waechter_beruecksichtigt_zusatz_email():
     mit_fg = _acc(3, "Andere", "Person", "andere@example.ch", "FG-3")
     k = _kontakt(9, "lina", "brunner", mail="lina@example.ch", geb="2000-01-01")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
-    assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1
+    assert e.neueintritte == [] and e.duplikat_warnungen == []
+    z = next(z for z in e.korrekturen if z.vorname == "Lina")
+    assert z.bemerkungen == "FG-9" and z.email == "primaer@example.ch"
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +272,7 @@ def test_echte_abweichung_wird_info_oder_handarbeit_je_nach_regel():
     assert e2.kontakt_abweichungen == []
 
 def test_fg_nachtrag_fuer_unklassifizierten_account_mit_gruppen_merge():
-    unklass = _acc(5, "Neu", "Kind", "neu@example.ch", None, gruppen=("Foodbox", "Infrastrukur"), ziel=2.0)
+    unklass = _acc(5, "Neu", "Kind", "neu@example.ch", None, gruppen=("Foodbox", "Infrastrukur"), ziel=1.0)
     k = _kontakt_mails(9, "Neu", "Kind", "neu@example.ch", "", geb="2000-01-01")
     e = gleiche_ab([k], [unklass], REGELN, HEUTE)
     assert e.neueintritte == [] and e.duplikat_warnungen == []
@@ -285,3 +291,95 @@ def test_kategorien_uebersicht():
     e = gleiche_ab(ks, [], REGELN, HEUTE)
     assert e.kategorien == {"pflichtig": {"Aktivmitglied": 2}, "nicht_pflichtig": {"Passivmitglied": 1},
                             "unbekannt": {"Gönner": 1}}
+
+
+
+# ---------------------------------------------------------------------------
+# Soll-Zustands-Logik (Neufassung 10.09.2026): Fälle der Matrix aus den Kunstdaten
+# ---------------------------------------------------------------------------
+
+def _k_erw(nr, vn, nn, mail, kategorie="Aktivmitglied"):
+    k = _kontakt(nr, vn, nn, mail=mail, kategorie=kategorie, geb="2000-01-01", eltern="")
+    k.alle_emails = [mail] if mail else []
+    return k
+
+def test_fall_b_sieht_wie_mitglied_aus_ohne_fairgate_bezug_wird_freiwillig():
+    # Gruppe «Mitglied» + «Freiwillige», Zielwert 2, keine FG, nirgends in Fairgate (dein Beispiel)
+    a = _acc(1, "Karl", "Ohne", "karl@example.ch", None, gruppen=("Mitglied", "Freiwillige", "Foodbox"), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.vorname == "Karl")
+    assert z.zielwert == "0" and set(z.gruppe.split(", ")) == {"Freiwillige", "Foodbox"}
+    assert "Kein Mitglied in Fairgate" in z.grund
+    assert e.klaerliste == []
+
+def test_fall_b_mit_gleichem_nachnamen_gibt_zweitaccount_hinweis():
+    a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")], REGELN, HEUTE)
+    assert any(z.vorname == "Reto" and z.zielwert == "0" for z in e.korrekturen)      # trotzdem automatisch
+    assert e.klaerliste == []                                                        # kein Pflicht-Häkchen
+    assert len(e.hinweise) == 1 and "Reto Brunner" in e.hinweise[0] and "FG-1" in e.hinweise[0]
+
+def test_fall_c_nur_mail_passt_wird_klaerfall_mit_vorschlag():
+    a = _acc(1, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
+    e = gleiche_ab([_k_erw(5, "Jan", "Odermatt", "familie@example.ch")], [a], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.korrekturen == []
+    assert len(e.klaerliste) == 1 and "FG-5" in e.klaerliste[0] and "Zweitaccount" in e.klaerliste[0]
+
+def test_fall_d_exakter_treffer_bei_bestehendem_mitgliedsaccount_wird_zweitaccount():
+    haupt = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1")
+    zweit = _acc(2, "Lina", "Brunner", "lina@example.ch", None, gruppen=("Foodbox",), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [haupt, zweit], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.email == "lina@example.ch" and z.bemerkungen == "FG-1")
+    assert z.zielwert == "0" and set(z.gruppe.split(", ")) == {"Foodbox", "Freiwillige"}
+    assert "Zweitaccount" in z.grund and e.neueintritte == []
+
+def test_fall_f1_fg_ohne_mitglied_marker_ist_das_mitglied():
+    a = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1", gruppen=("Foodbox",), ziel=0.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a], REGELN, HEUTE)
+    z = e.korrekturen[0]
+    assert z.zielwert == "2" and set(z.gruppe.split(", ")) == {"Foodbox", "Mitglied"} and z.bemerkungen == ""
+    assert e.neueintritte == [] and e.handarbeit == []
+
+def test_fall_f2_zweitaccount_bekommt_freiwillige_marker_und_null():
+    haupt = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1")
+    zweit = _acc(2, "Reto", "Brunner", "reto@example.ch", "FG-1", gruppen=("Foodbox",), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [haupt, zweit], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.vorname == "Reto")
+    assert z.zielwert == "0" and set(z.gruppe.split(", ")) == {"Foodbox", "Freiwillige"}
+
+def test_fall_g_mitglied_und_freiwillige_gleichzeitig_wird_bereinigt():
+    a = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1", gruppen=("Mitglied", "Freiwillige"), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a], REGELN, HEUTE)
+    assert len(e.korrekturen) == 1 and e.korrekturen[0].gruppe == "Mitglied" and e.korrekturen[0].zielwert == ""
+
+def test_fall_i_unbekannte_mit_einsaetzen_werden_freiwillige():
+    mit = classify({"id": 1, "firstName": "Dario", "lastName": "Ackermann", "email": "d@example.ch",
+                    "adminRemarks": "", "groups": [{"id": 4, "name": "Unbekannte"}, {"id": 9, "name": "Foodbox"}],
+                    "stateCache": {"requestedValue": 0, "plannedValue": 2, "okAssignmentsNum": 2}})
+    ohne = classify({"id": 2, "firstName": "Still", "lastName": "Wasser", "email": "s@example.ch",
+                     "adminRemarks": "", "groups": [{"id": 4, "name": "Unbekannte"}],
+                     "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    e = gleiche_ab([], [mit, ohne], REGELN, HEUTE)
+    assert len(e.korrekturen) == 1 and e.korrekturen[0].vorname == "Dario"
+    assert set(e.korrekturen[0].gruppe.split(", ")) == {"Foodbox", "Freiwillige"}
+
+def test_nicht_pflichtige_kategorie_setzt_zielwert_null():
+    a = _acc(1, "Paul", "Passiv", "p@example.ch", "FG-1", ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Paul", "Passiv", "p@example.ch", kategorie="Passivmitglied")], [a], REGELN, HEUTE)
+    assert len(e.korrekturen) == 1 and e.korrekturen[0].zielwert == "0" and e.handarbeit == []
+
+def test_austritt_mit_treffer_auf_andere_fg_gibt_hinweis():
+    a = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1")
+    e = gleiche_ab([_k_erw(99, "Lina", "Brunner", "lina@example.ch")], [a], REGELN, HEUTE)
+    h = next(h for h in e.handarbeit if h.art == "austritt")
+    assert "FG-99" in h.detail and "geändert" in h.detail
+    assert e.neueintritte == []          # Kontakt FG-99 ist über Name/Mail dem Account zugeordnet — kein Neueintritt
+
+def test_bemerkung_belegt_verhindert_fg_nachtrag_und_gibt_klaerfall():
+    a = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
+                  "adminRemarks": "Zahlt bar", "groups": [{"id": 1, "name": "Mitglied"}],
+                  "stateCache": {"requestedValue": 2, "plannedValue": 0}})
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")],
+                   [a, _acc(2, "Andere", "Person", "andere@example.ch", "FG-2")], REGELN, HEUTE)
+    assert not any(z.vorname == "Lina" for z in e.korrekturen) and e.neueintritte == []
+    assert len(e.klaerliste) == 1 and "belegt" in e.klaerliste[0]
