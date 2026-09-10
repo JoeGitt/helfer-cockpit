@@ -127,3 +127,22 @@ def test_handarbeitsliste_rendert_strukturierte_klaerfaelle():
                                       "fakten": ["Fakt eins"], "optionen": ["Option A", "Option B"], "helper_id": 2, "fg": "FG-5"}])
     html = handarbeitsliste_html(e)
     assert "Klärfälle" in html and "Fakt eins" in html and "→ Option B" in html and "(Portal)" in html
+
+
+def test_import_begruendung_html_und_kategorien():
+    from cockpit.abgleich import ImportZeile
+    from cockpit.exports import import_begruendung_html, import_zeilen_mit_grund, grund_kategorie
+    e = AbgleichErgebnis(
+        neueintritte=[ImportZeile("Neu", "Kind", "n@example.ch", gruppe="Mitglied", zielwert="2", bemerkungen="FG-9",
+                                  grund="Neueintritt: in Fairgate, noch kein Portal-Account")],
+        korrekturen=[ImportZeile("Karl", "Ohne", "k@example.ch", zielwert="0", gruppe="Freiwillige",
+                                 grund="Kein Mitglied in Fairgate (weder FG, E-Mail noch Name): Freiwillige(r), Zielwert 0"),
+                     ImportZeile("Lina", "Brunner", "l@example.ch", zielwert="2", grund="Mitglied: Zielwert nachführen")])
+    z = import_zeilen_mit_grund(e)
+    assert [x["zeile"] for x in z] == [2, 3, 4]
+    assert [x["kategorie"] for x in z] == ["Neueintritt", "Kein Mitglied in Fairgate → Freiwillige", "Mitglied aktualisieren"]
+    assert z[0]["aenderungen"].startswith("E-Mail n@example.ch") and "Bemerkung FG-9" in z[0]["aenderungen"]
+    assert grund_kategorie("Zweitaccount von FG-3 («X», gleiche E-Mail): …") == "Zweitaccount"
+    html = import_begruendung_html(e, "import-2026-09-10.xlsx")
+    assert "import-2026-09-10.xlsx" in html and "Karl Ohne" in html and "<td class='n'>3</td>" in html
+    assert "Kein Mitglied in Fairgate → Freiwillige: 1" in html

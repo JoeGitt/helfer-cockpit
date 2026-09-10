@@ -535,7 +535,13 @@ function renderChecklist() {
         <li><span class="n">3</span><div><b>Datei wählen und hochladen</b><span>Das Portal erkennt bestehende Personen an Vorname + Nachname + E-Mail und aktualisiert nur die gefüllten Felder; neue Personen werden angelegt. Es wird nichts gelöscht.</span></div></li>
         <li><span class="n">4</span><div><b>Hier abhaken</b><span>Erst danach zur Kontrolle — sie prüft, ob der Import angekommen ist.</span></div></li>
       </ol>
-      ${vorschau.length ? `<details class="more"><summary>Was in der Datei steht (${vorschau.length} Zeilen)</summary><table class="data" style="font-size:12.5px;margin-top:8px"><thead><tr><th>Person</th><th>Art</th><th>Warum und was</th></tr></thead><tbody>${vorschau.map((z) => `<tr><td>${esc(z.name)}</td><td><span class="typ ${z.art === "Neueintritt" ? "mitglied" : ""}">${esc(z.art)}</span></td><td class="sub"><b style="color:var(--ink)">${esc(z.grund || "")}</b>${z.grund ? " — " : ""}${esc(z.aenderungen)}</td></tr>`).join("")}</tbody></table></details>` : ""}
+      ${vorschau.length ? `<div class="begr" id="begr">
+        <div class="begr-head"><div><b>Was in der Datei steht — und warum</b><span class="sub">Zeile = Zeile in Excel (Kopfzeile ist 1). Zum Nachlesen auch als Datei: <a class="plink" href="${ausgabeLink(d.dateien.begruendung || "")}" target="_blank" rel="noopener">${ic("file", "sm")}${esc(basename(d.dateien.begruendung || ""))}</a></span></div>
+          <input type="search" id="begr-suche" placeholder="Person oder Grund suchen" aria-label="In der Import-Vorschau suchen"></div>
+        <div class="chips" id="begr-chips"></div>
+        <div class="tablewrap begr-wrap"><table class="data" id="tab-begr"><thead><tr>
+          <th class="r" data-sort="zeile">Zeile<span class="sorticon">↕</span></th><th data-sort="name">Person<span class="sorticon">↕</span></th><th data-sort="art">Art<span class="sorticon">↕</span></th><th data-sort="kategorie">Warum<span class="sorticon">↕</span></th><th>Begründung und was geschrieben wird</th></tr></thead><tbody id="tab-begr-body"></tbody></table></div>
+        <div class="tfoot" id="tfoot-begr"></div></div>` : ""}
     </div>
     <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
@@ -551,7 +557,38 @@ function renderChecklist() {
   const abw = d.kontakt_abweichungen || [];
   if (abw.length) html += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
   $("wiz-3-liste").innerHTML = html;
+  if (vorschauAktiv(d)) initBegruendung(d.import_vorschau);
   aktualisiereFortschritt();
+}
+function vorschauAktiv(d) { return !!(d && d.import_vorschau && d.import_vorschau.length && $("tab-begr-body")); }
+// ---- Begründungstabelle zur Import-Datei: Chips nach Grund, Suche, sortierbar ----
+const B = { chip: "alle", suche: "", sort: { key: "zeile", dir: "asc" } };
+function initBegruendung(zeilen) {
+  B.chip = "alle"; B.suche = ""; B.sort = { key: "zeile", dir: "asc" };
+  const zaehler = {};
+  zeilen.forEach((z) => { zaehler[z.kategorie] = (zaehler[z.kategorie] || 0) + 1; });
+  const kats = Object.keys(zaehler).sort((a, b) => zaehler[b] - zaehler[a]);
+  $("begr-chips").innerHTML = [`<button class="chip" data-kat="alle" aria-pressed="true">Alle <span class="c">${zeilen.length}</span></button>`]
+    .concat(kats.map((k) => `<button class="chip" data-kat="${esc(k)}" aria-pressed="false">${esc(k)} <span class="c">${zaehler[k]}</span></button>`)).join("");
+  $("begr-chips").querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+    B.chip = c.dataset.kat;
+    $("begr-chips").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+    renderBegruendung(zeilen);
+  }));
+  $("begr-suche").addEventListener("input", (e) => { B.suche = e.target.value.trim().toLowerCase(); renderBegruendung(zeilen); });
+  bindeSort("tab-begr", B.sort, () => renderBegruendung(zeilen));
+  renderBegruendung(zeilen);
+}
+function renderBegruendung(zeilen) {
+  const q = B.suche;
+  let liste = zeilen.filter((z) => (B.chip === "alle" || z.kategorie === B.chip)
+    && (!q || `${z.name} ${z.email} ${z.grund} ${z.aenderungen} ${z.kategorie}`.toLowerCase().includes(q)));
+  const k = B.sort.key, dir = B.sort.dir === "asc" ? 1 : -1;
+  liste = liste.slice().sort((a, b) => (k === "zeile" ? a.zeile - b.zeile : String(a[k]).localeCompare(String(b[k]), "de") || a.zeile - b.zeile) * dir);
+  markiereSort("tab-begr", B.sort);
+  $("tab-begr-body").innerHTML = liste.map((z) => `<tr><td class="r num">${z.zeile}</td><td><b>${esc(z.name)}</b><div class="sub">${esc(z.email)}</div></td><td><span class="typ ${z.art === "Neueintritt" ? "mitglied" : ""}">${esc(z.art)}</span></td><td>${esc(z.kategorie)}</td><td class="sub"><span style="color:var(--ink)">${esc(z.grund || "")}</span>${z.aenderungen ? `<div>Schreibt: ${esc(z.aenderungen)}</div>` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="sub" style="text-align:center;padding:18px">Nichts gefunden.</td></tr>`;
+  $("tfoot-begr").innerHTML = `<span>${liste.length} von ${zeilen.length} Zeilen</span><span style="margin-left:auto">Die Datei wird in dieser Reihenfolge importiert; leere Zellen ändern nichts.</span>`;
 }
 function aktualisiereFortschritt() {
   const boxen = [...document.querySelectorAll("#wiz-3-liste input[data-key]")];

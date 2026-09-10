@@ -12,7 +12,8 @@ from .checks import run_checks, Hinweis
 from .fairgate_reader import lies_fairgate, FalscheDatei
 from .abgleich import gleiche_ab
 from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsliste_html,
-                      schreibe_gesamtexport_xlsx, schreibe_kontaktabweichungen_csv)
+                      schreibe_gesamtexport_xlsx, schreibe_kontaktabweichungen_csv,
+                      import_zeilen_mit_grund, import_begruendung_html)
 from .settings import lade_regeln, lade_regeln_mit_fehler, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
 
@@ -77,19 +78,9 @@ def _abgleich_json(z, ergebnis):
 
 
 def _import_vorschau(ergebnis):
-    """Was in der Import-Datei steht — damit niemand Excel öffnen muss, um es zu wissen."""
-    def felder(z):
-        teile = []
-        if z.gruppe: teile.append(f"Gruppen → {z.gruppe}")
-        if z.zielwert: teile.append(f"Zielwert {z.zielwert}")
-        if z.telefon: teile.append(f"Telefon {z.telefon}")
-        if z.bemerkungen: teile.append(f"Bemerkung {z.bemerkungen}")
-        if z.email and z in ergebnis.neueintritte: teile.append(f"E-Mail {z.email}")
-        return ", ".join(teile)
-    return ([{"name": f"{z.vorname} {z.nachname}".strip(), "art": "Neueintritt",
-              "grund": z.grund, "aenderungen": felder(z)} for z in ergebnis.neueintritte]
-            + [{"name": f"{z.vorname} {z.nachname}".strip(), "art": "Korrektur",
-                "grund": z.grund, "aenderungen": felder(z)} for z in ergebnis.korrekturen])
+    """Was in der Import-Datei steht und warum — mit der Excel-Zeilennummer (Kopfzeile = 1),
+    damit «Zeile 14» im Cockpit und in Excel dasselbe meint. Reihenfolge wie in der Datei."""
+    return import_zeilen_mit_grund(ergebnis)
 
 
 def baue_dashboard(z):
@@ -296,7 +287,10 @@ def starte_server(zustand, port=0):
                     liste_pfad.write_text(handarbeitsliste_html(ergebnis), encoding="utf-8")
                     kontakte_pfad = zustand.ausgabe_dir / f"kontaktdaten-abweichungen-{heute}.csv"
                     schreibe_kontaktabweichungen_csv(ergebnis.kontakt_abweichungen, kontakte_pfad)
-                    dateien = [import_pfad.name, liste_pfad.name, kontakte_pfad.name]
+                    begruendung_pfad = zustand.ausgabe_dir / f"import-{heute}-begruendung.html"
+                    begruendung_pfad.write_text(import_begruendung_html(ergebnis, import_pfad.name),
+                                                encoding="utf-8")
+                    dateien = [import_pfad.name, liste_pfad.name, kontakte_pfad.name, begruendung_pfad.name]
                     protokoll.logge(zustand.protokoll_pfad, "abgleich", {
                         "geprueft": ergebnis.geprueft,
                         "neueintritte": len(ergebnis.neueintritte),
@@ -306,7 +300,7 @@ def starte_server(zustand, port=0):
                         "dateien": dateien})
                     antwort = _abgleich_json(zustand, ergebnis)
                     antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
-                                          "kontakte": str(kontakte_pfad)}
+                                          "kontakte": str(kontakte_pfad), "begruendung": str(begruendung_pfad)}
                     zustand.letztes_ergebnis = antwort
                     zustand.letzter_abgleich = {
                         "zeit": datetime.datetime.now().isoformat(timespec="seconds"),

@@ -77,6 +77,69 @@ def schreibe_saeumigen_csv(mitglieder, sicht, halbjahresziel, pfad):
     return len(saeumige)
 
 
+# Kurzlabel je Begründung — für Filter-Chips und die Spalte «Warum»
+_GRUND_KATEGORIEN = (("Neueintritt", "Neueintritt"), ("Zweitaccount", "Zweitaccount"),
+                     ("Kein Mitglied", "Kein Mitglied in Fairgate → Freiwillige"),
+                     ("Unbekannt", "Unbekannt mit Einsätzen → Freiwillige"),
+                     ("ohne Helferpflicht", "Keine Helferpflicht → Zielwert 0"),
+                     ("ohne FG-Nummer", "FG-Nummer nachtragen"), ("Ist das Mitglied", "FG-Nummer nachtragen"))
+
+
+def grund_kategorie(grund):
+    for schluessel, label in _GRUND_KATEGORIEN:
+        if schluessel in (grund or ""):
+            return label
+    return "Mitglied aktualisieren"
+
+
+def import_zeilen_mit_grund(e):
+    """Jede Import-Zeile mit Excel-Zeilennummer, Art, Kurzgrund, Begründung und den Feldern, die
+    geschrieben werden. Reihenfolge = Reihenfolge in der Datei (Neueintritte, dann Korrekturen)."""
+    def felder(z, neu):
+        teile = []
+        if neu and z.email: teile.append(f"E-Mail {z.email}")
+        if z.gruppe: teile.append(f"Gruppen → {z.gruppe}")
+        if z.zielwert: teile.append(f"Zielwert {z.zielwert}")
+        if z.telefon: teile.append(f"Telefon {z.telefon}")
+        if z.bemerkungen: teile.append(f"Bemerkung {z.bemerkungen}")
+        return ", ".join(teile)
+    zeilen = []
+    for i, (z, neu) in enumerate([(z, True) for z in e.neueintritte] + [(z, False) for z in e.korrekturen]):
+        zeilen.append({"zeile": i + 2, "name": f"{z.vorname} {z.nachname}".strip(), "email": z.email,
+                       "art": "Neueintritt" if neu else "Korrektur", "kategorie": grund_kategorie(z.grund),
+                       "grund": z.grund, "aenderungen": felder(z, neu)})
+    return zeilen
+
+
+def import_begruendung_html(e, import_dateiname=""):
+    """Druckbare Begleitdatei zur Import-Datei: warum jede Zeile drin ist. Wird nicht importiert."""
+    zeilen = import_zeilen_mit_grund(e)
+    esc = html_mod.escape
+    zaehler = {}
+    for z in zeilen:
+        zaehler[z["kategorie"]] = zaehler.get(z["kategorie"], 0) + 1
+    teile = ["<meta charset='utf-8'><title>Begründung zur Import-Datei</title>",
+             "<style>body{font:14px/1.5 sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem}"
+             "table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;"
+             "padding:6px 8px;border-bottom:1px solid #ddd}th{font-size:12px;text-transform:uppercase;"
+             "letter-spacing:.05em;color:#555}td.n{text-align:right;font-variant-numeric:tabular-nums}"
+             "tr{break-inside:avoid}</style>",
+             f"<h1>Begründung zur Import-Datei</h1><p><b>{esc(import_dateiname)}</b> · {len(zeilen)} Zeilen · "
+             "Diese Datei ist nur zum Nachlesen und wird nicht ins Portal importiert. Die Zeilennummer "
+             "entspricht der Zeile in Excel (Kopfzeile = 1).</p>",
+             "<p>" + " · ".join(f"{esc(k)}: {n}" for k, n in sorted(zaehler.items(), key=lambda kv: -kv[1])) + "</p>",
+             "<table><thead><tr><th>Zeile</th><th>Person</th><th>E-Mail</th><th>Art</th><th>Warum</th>"
+             "<th>Begründung</th><th>Was geschrieben wird</th></tr></thead><tbody>"]
+    for z in zeilen:
+        teile.append(f"<tr><td class='n'>{z['zeile']}</td><td>{esc(z['name'])}</td><td>{esc(z['email'])}</td>"
+                     f"<td>{esc(z['art'])}</td><td>{esc(z['kategorie'])}</td><td>{esc(z['grund'])}</td>"
+                     f"<td>{esc(z['aenderungen'])}</td></tr>")
+    teile.append("</tbody></table>")
+    if not zeilen:
+        teile.append("<p>Keine Import-Zeilen — dieses Mal ist kein Import nötig.</p>")
+    return "\n".join(teile)
+
+
 def handarbeitsliste_html(e):
     def punkt(text):
         return ('<li><label><input type="checkbox"> ' + html_mod.escape(text) + "</label></li>")

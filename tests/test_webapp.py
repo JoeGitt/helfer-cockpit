@@ -428,3 +428,10 @@ def test_fairgate_liefert_import_vorschau(server):
     neu = next(z for z in v if z["art"] == "Neueintritt")
     assert neu["name"] == "Neu Kind" and "FG-9999" in neu["aenderungen"] and "Zielwert 2" in neu["aenderungen"]
     assert any(z["art"] == "Korrektur" for z in v)          # Zweitaccount/Freiwillige mit Zielwert → 0
+    assert [z["zeile"] for z in v] == list(range(2, len(v) + 2))       # Excel-Zeilen, Kopfzeile = 1
+    assert neu["kategorie"] == "Neueintritt" and all(z["kategorie"] and "email" in z for z in v)
+    # Begleitdatei mit Begründung liegt neben der Import-Datei und wird ausgeliefert
+    assert d["dateien"]["begruendung"].endswith("-begruendung.html")
+    with urllib.request.urlopen(server + "/ausgabe/" + d["dateien"]["begruendung"].split("/")[-1]) as r:
+        html = r.read().decode()
+    assert "Neu Kind" in html and "Zeile" in html and "nicht ins Portal importiert" in html
