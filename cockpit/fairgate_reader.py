@@ -1,4 +1,4 @@
-"""Liest den Fairgate-Export «Aktive Kontakte» (für Aktualisierungsimport optimiert)."""
+"""Liest den Fairgate-Export «Aktive Kontakte» (normaler Excel-Export; die Spalte «Kontakt-ID Verein» ist Pflicht)."""
 import zipfile
 from dataclasses import dataclass, field
 import openpyxl
