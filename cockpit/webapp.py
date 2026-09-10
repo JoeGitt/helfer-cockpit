@@ -61,7 +61,9 @@ def _abgleich_json(z, ergebnis):
         "korrekturen": len(ergebnis.korrekturen),
         "handarbeit": [{**vars(h), "portal_url": portal_url(z, h.helper_id) if h.helper_id else None}
                        for h in ergebnis.handarbeit],
-        "klaerliste": ergebnis.klaerliste,
+        "klaerliste": [({**k, "portal_url": portal_url(z, k["helper_id"]) if k.get("helper_id") else None}
+                        if isinstance(k, dict) else {"titel": str(k), "fakten": [], "optionen": [], "wo": "", "portal_url": None})
+                       for k in ergebnis.klaerliste],
         "duplikat_warnungen": ergebnis.duplikat_warnungen,
         "unbekannte_kategorien": ergebnis.unbekannte_kategorien,
         "kontakt_abweichungen": [{**a, "portal_url": portal_url(z, a["helper_id"]) if a.get("helper_id") else None}

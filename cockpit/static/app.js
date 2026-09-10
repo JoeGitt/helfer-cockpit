@@ -25,7 +25,7 @@ const SCHWERE = {
   warnung:  { titel: "Warnung — im Abgleich oder danach", cls: "warn", farbe: "var(--warn)" },
   hinweis:  { titel: "Hinweis — zur Kenntnis", cls: "info", farbe: "var(--info)" },
 };
-const ART_LABEL = { schluessel: "E-Mail im Portal nachführen", austritt: "Im Portal deaktivieren", leerung: "Feld im Portal leeren" };
+const ART_LABEL = { schluessel: "E-Mail im Portal nachführen", austritt: "Im Portal deaktivieren" };
 
 // ------------------------------------------------------------------ Helfer ----
 const $ = (id) => document.getElementById(id);
@@ -452,10 +452,19 @@ function clItem(key, titel, detail, aktionen = "") {
   const done = !!W.checks[key];
   return `<li class="${done ? "done" : ""}"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(titel)}"><div class="t"><b>${esc(titel)}</b>${detail ? `<span>${esc(detail)}</span>` : ""}</div><div class="a">${aktionen}</div></li>`;
 }
+function klaerItem(key, kf) {
+  const done = !!W.checks[key];
+  const fakten = (kf.fakten || []).map((f) => `<li>${esc(f)}</li>`).join("");
+  const optionen = (kf.optionen || []).map((o) => { const [wenn, dann] = o.split(" → "); return `<li><b>${esc(wenn)}</b>${dann ? ` → ${esc(dann)}` : ""}</li>`; }).join("");
+  return `<li class="${done ? "done" : ""} klaer"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Entschieden: ${esc(kf.titel)}">
+    <div class="t"><b>${esc(kf.titel)}</b> ${kf.wo ? `<span class="typ ${kf.wo === "Fairgate" ? "" : "mitglied"}">${esc(kf.wo)}</span>` : ""}
+      ${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${optionen ? `<ul class="optionen">${optionen}</ul>` : ""}</div>
+    <div class="a">${plink(kf.portal_url, "Im Portal öffnen")}</div></li>`;
+}
 function renderChecklist() {
   const d = W.abgleich; if (!d) return;
   $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Reihenfolge: erst die Punkte im Portal, dann die Import-Datei hochladen, dann Fairgate — sonst entstehen Duplikate.`;
-  const reihenfolge = ["schluessel", "austritt", "leerung"];
+  const reihenfolge = ["schluessel", "austritt"];
   const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` })).sort((a, b) => reihenfolge.indexOf(a.art) - reihenfolge.indexOf(b.art));
   const portalOnly = (S.daten ? S.daten.hinweise : []).filter((h) => ["D3", "D10"].includes(h.code));
   const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })),
@@ -466,7 +475,7 @@ function renderChecklist() {
   let html = "";
   // A · Portal
   const aKeys = [...hand.map((h) => h.key), ...warn.map((w) => w.key)];
-  html += sek("A · Im Portal von Hand", `Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
+  html += sek("A · Im Portal von Hand", `Was der Import nicht kann: deaktivieren und Doppel-Accounts bereinigen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
   if (aKeys.length) html += `<ul class="checklist">${hand.map((h) => clItem(h.key, `${ART_LABEL[h.art] || h.art}: ${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}${warn.map((w) => clItem(w.key, `${w.k} — von Hand prüfen`, w.t)).join("")}</ul>`;
   // B · Import — das Herzstück, darum als eigene erklärende Karte
   const bKeys = nImport ? ["imp"] : [];
@@ -490,10 +499,10 @@ function renderChecklist() {
     </div>
     <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
-  // C · Fairgate
+  // C · Klärfälle — Entscheidungen, mit Fakten und Optionen
   const cKeys = d.klaerliste.map((_, i) => `k:${i}`);
-  html += sek("C · In Fairgate nachtragen", d.klaerliste.length ? "Diese Punkte kann nur Fairgate lösen — beim nächsten Abgleich rutschen sie automatisch nach." : "", cKeys, cKeys.every((k) => W.checks[k]));
-  if (cKeys.length) html += `<ul class="checklist">${d.klaerliste.map((t, i) => clItem(`k:${i}`, t, "")).join("")}</ul>`;
+  html += sek("C · Klärfälle — hier entscheidest du", d.klaerliste.length ? "Jeder Punkt sagt, um welchen Account es geht, was bekannt ist und was bei welcher Antwort zu tun ist. Meist im Portal — den Rest erledigt der nächste Abgleich automatisch." : "", cKeys, cKeys.every((k) => W.checks[k]));
+  if (cKeys.length) html += `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
   // Info: möglicher Zweitaccount u. ä. — keine Häkchen
   const hinweise = d.hinweise || [];
   if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((t) => `<li><span></span><div class="t"><span>${esc(t)}</span></div><div class="a"></div></li>`).join("")}</ul></details>`;

@@ -82,14 +82,6 @@ def test_gesamtexport_xlsx(tmp_path):
     assert ["FG-1", "Rita Gerber", "zweitaccount", 0, 1, "FG-1"] in rows
 
 
-def test_handarbeitsliste_html_zeigt_feld_leerungen():
-    e = AbgleichErgebnis(handarbeit=[HandarbeitsFall("leerung", "Lina Brunner", "FG-1",
-                                                      "Telefon in Fairgate geleert")],
-                         zusammenfassung="Alles synchron bei 1 geprüften Mitgliedern.")
-    html = handarbeitsliste_html(e)
-    assert "Felder leeren" in html and "Lina Brunner" in html
-
-
 def test_korrektur_zeile_ueberschreibt_bemerkungen_zelle_nicht(tmp_path):
     # C1: Korrektur-Zeilen (Match über Vorname/Nachname/E-Mail-Tripel) dürfen adminRemarks im
     # Portal nie überschreiben — eine leere Bemerkungen-Zelle im Import lässt das Feld in Ruhe.
@@ -127,3 +119,11 @@ def test_kontaktabweichungen_csv(tmp_path):
     assert n == 1
     zeilen = list(csv.reader(pfad.open(encoding="utf-8-sig"), delimiter=";"))
     assert zeilen[0][:4] == ["Name", "FG-Nummer", "E-Mail Portal", "E-Mail Fairgate"] and zeilen[1][2] == "alt@example.ch"
+
+
+def test_handarbeitsliste_rendert_strukturierte_klaerfaelle():
+    e = AbgleichErgebnis(zusammenfassung="Alles synchron bei 1 geprüften Mitgliedern.",
+                         klaerliste=[{"titel": "Petra: gleiche E-Mail wie Jan (FG-5)", "wo": "Portal",
+                                      "fakten": ["Fakt eins"], "optionen": ["Option A", "Option B"], "helper_id": 2, "fg": "FG-5"}])
+    html = handarbeitsliste_html(e)
+    assert "Klärfälle" in html and "Fakt eins" in html and "→ Option B" in html and "(Portal)" in html

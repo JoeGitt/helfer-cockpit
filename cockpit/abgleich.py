@@ -35,7 +35,7 @@ class ImportZeile:
 
 @dataclass
 class HandarbeitsFall:
-    art: str      # "austritt" | "schluessel" | "leerung"
+    art: str      # "austritt" | "schluessel"
     name: str
     fg: str
     detail: str
@@ -152,8 +152,11 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
     fg_mit_mitgliedsaccount = set(portal_nach_fg)
     fg_zugeordnet = set()     # Fairgate-FGs, die über einen FG-losen Account abgedeckt werden
 
-    def klaer(text):
-        e.klaerliste.append(text)
+    def klaer(titel, fakten, optionen, wo="Portal", helper_id=None, fg=""):
+        """Klärfall = eine Entscheidung, die nur ein Mensch treffen kann. Immer mit: worum es
+        geht (Fakten), was bei welcher Antwort zu tun ist (Optionen), und wo (Portal/Fairgate)."""
+        e.klaerliste.append({"titel": titel, "fakten": list(fakten), "optionen": list(optionen),
+                             "wo": wo, "helper_id": helper_id, "fg": fg})
 
     def korrektur(a, grund, **felder):
         if not any(felder.values()):
@@ -180,11 +183,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                                      ("Telefon nachführen", "telefon" in felder),
                                      ("überzählige Gruppe «Freiwillige/Unbekannte» entfernen", bool(felder["gruppe"]))) if ok])
                 korrektur(a, grund, **felder)
-                if not k.telefon and a.telefon:
-                    e.handarbeit.append(HandarbeitsFall(
-                        "leerung", a.anzeigename, a.fg,
-                        f"Telefon in Fairgate geleert (Portal: {a.telefon}) — Feld im Portal von "
-                        "Hand leeren, der Import kann das nicht.", helper_id=a.id))
+                # Telefon nur im Portal, nicht in Fairgate: bewusst KEINE Massnahme (Entscheid 10.09.2026)
                 _email_pruefen(e, a, k, regeln, heute)
             elif a.fg in fg_mit_mitgliedsaccount:
                 # Fall F2: Zweitaccount eines bestehenden Mitglieds — Zielwert 0, Marker «Freiwillige»
@@ -234,8 +233,13 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                 if fg0 in fg_mit_mitgliedsaccount:
                     # Fall D: Mitglied hat schon einen Account → dieser ist ein Zweitaccount
                     if a.bemerkung:
-                        klaer(f"{a.anzeigename}: ist ein Zweitaccount von {fg0} — Bemerkungsfeld ist "
-                              "belegt, FG-Nummer von Hand eintragen (Import würde es überschreiben).")
+                        haupt = portal_nach_fg[fg0]
+                        klaer(f"{a.anzeigename}: Zweitaccount von {fg0} — FG-Nummer von Hand eintragen",
+                              [f"Portal-Account «{a.anzeigename}» hat E-Mail und Name wie Fairgate-Kontakt {fg0}",
+                               f"Zur FG-Nummer {fg0} gibt es bereits den Mitglieds-Account «{haupt.anzeigename}» — dieser Account hier ist also ein Zweitaccount",
+                               f"Das Bemerkungsfeld ist belegt («{a.bemerkung}»), darum kann der Import die FG-Nummer nicht eintragen"],
+                              [f"Im Portal bei «{a.anzeigename}»: Bemerkung um «{fg0}» ergänzen — Zielwert 0 und Gruppe «Freiwillige» setzt danach der nächste Abgleich automatisch"],
+                              helper_id=a.id, fg=fg0)
                     else:
                         e.korrekturen.append(ImportZeile(
                             vorname=a.vorname, nachname=a.nachname, email=a.email,
@@ -245,8 +249,11 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                 else:
                     # FG-Nachtrag: dieser Account ist das Mitglied
                     if a.bemerkung:
-                        klaer(f"{a.anzeigename}: ist Mitglied {fg0} — Bemerkungsfeld ist belegt, "
-                              "FG-Nummer von Hand eintragen (Import würde es überschreiben).")
+                        klaer(f"{a.anzeigename}: ist Mitglied {fg0} — FG-Nummer von Hand eintragen",
+                              [f"Portal-Account «{a.anzeigename}» hat E-Mail und Name wie Fairgate-Kontakt {fg0}, aber keine FG-Nummer",
+                               f"Das Bemerkungsfeld ist belegt («{a.bemerkung}»), darum kann der Import die FG-Nummer nicht eintragen"],
+                              [f"Im Portal bei «{a.anzeigename}»: Bemerkung um «{fg0}» ergänzen — Zielwert und Gruppe «Mitglied» setzt danach der nächste Abgleich automatisch"],
+                              helper_id=a.id, fg=fg0)
                     else:
                         e.korrekturen.append(ImportZeile(
                             vorname=a.vorname, nachname=a.nachname, email=a.email,
@@ -257,19 +264,55 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                     portal_nach_fg[fg0] = a
                 fg_zugeordnet.add(fg0)
             elif per_mail:
-                # Fall C: E-Mail bekannt, Name nicht — gleiche Person oder Elternteil?
-                fgs = ", ".join(sorted(per_mail))
-                klaer(f"{a.anzeigename}: E-Mail gehört zu Fairgate-Kontakt {fgs} "
-                      f"({', '.join(pflichtig[f].vorname + ' ' + pflichtig[f].nachname for f in sorted(per_mail))}). "
-                      "Gleiche Person mit anderer Schreibweise → FG-Nummer nachtragen und Gruppe «Mitglied»; "
-                      "Elternteil → FG-Nummer nachtragen, Zielwert 0, Gruppe «Freiwillige» (Zweitaccount).")
-                fg_zugeordnet.update(per_mail)
+                # Fall C: E-Mail bekannt, Name nicht.
+                mit_account = sorted(f for f in per_mail if f in fg_mit_mitgliedsaccount)
+                if mit_account:
+                    # C1: das Mitglied hat bereits einen eigenen Account → dieser hier (anderer Name,
+                    # gleiche Familien-E-Mail) ist eindeutig ein Zweitaccount, z. B. ein Elternteil.
+                    fg0 = mit_account[0]
+                    haupt = portal_nach_fg[fg0]
+                    if a.bemerkung:
+                        klaer(f"{a.anzeigename}: Zweitaccount von {fg0} — FG-Nummer von Hand eintragen",
+                              [f"Portal-Account «{a.anzeigename}» verwendet dieselbe E-Mail wie Fairgate-Kontakt {fg0} («{haupt.anzeigename}»)",
+                               f"«{haupt.anzeigename}» hat bereits einen eigenen Mitglieds-Account — «{a.anzeigename}» ist also ein Zweitaccount (z. B. Elternteil)",
+                               f"Das Bemerkungsfeld ist belegt («{a.bemerkung}»), darum kann der Import die FG-Nummer nicht eintragen"],
+                              [f"Im Portal bei «{a.anzeigename}»: Bemerkung um «{fg0}» ergänzen — Zielwert 0 und Gruppe «Freiwillige» setzt danach der nächste Abgleich automatisch"],
+                              helper_id=a.id, fg=fg0)
+                    else:
+                        e.korrekturen.append(ImportZeile(
+                            vorname=a.vorname, nachname=a.nachname, email=a.email,
+                            bemerkungen=fg0, zielwert="0" if a.zielwert != 0 else "",
+                            gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE)),
+                            grund=f"Zweitaccount von {fg0} («{haupt.anzeigename}», gleiche E-Mail): FG-Nummer eintragen, Zielwert 0, Gruppe «Freiwillige»"))
+                    fg_zugeordnet.add(fg0)
+                else:
+                    # C2: der Fairgate-Kontakt hat noch keinen Account — gleiche Person (anders
+                    # geschrieben) oder Elternteil? Das muss ein Mensch entscheiden.
+                    fg0 = sorted(per_mail)[0]
+                    k = pflichtig[fg0]
+                    kname = f"{k.vorname} {k.nachname}"
+                    klaer(f"{a.anzeigename}: gleiche E-Mail wie Fairgate-Kontakt «{kname}» ({fg0})",
+                          [f"Portal-Account «{a.anzeigename}» (ohne FG-Nummer) verwendet {a.email}",
+                           f"Diese E-Mail steht in Fairgate bei «{kname}» ({fg0}) — und «{kname}» hat noch keinen Portal-Account",
+                           f"Name im Portal: «{a.anzeigename}» · Name in Fairgate: «{kname}»"],
+                          [f"Gleiche Person, nur anders geschrieben → im Portal bei «{a.anzeigename}» Vor- und Nachname wie in Fairgate schreiben; der nächste Abgleich trägt {fg0} dann automatisch nach",
+                           f"Elternteil von «{kname}» → im Portal bei «{a.anzeigename}» Bemerkung «{fg0}» eintragen, Zielwert 0, Gruppe «Freiwillige»; für «{kname}» legt der nächste Abgleich einen eigenen Account an"],
+                          helper_id=a.id, fg=fg0)
+                    fg_zugeordnet.update(per_mail)
             elif per_name:
                 # Fall E: Name bekannt, E-Mail nicht — Neuregistrierung mit neuer Adresse?
-                fgs = ", ".join(sorted(per_name))
-                klaer(f"{a.anzeigename}: gleicher Name wie Fairgate-Kontakt {fgs}, aber andere E-Mail — "
-                      "vermutlich Neuregistrierung. Im Portal prüfen und ggf. FG-Nummer nachtragen "
-                      "oder Accounts zusammenführen.")
+                fg0 = sorted(per_name)[0]
+                k = pflichtig[fg0]
+                alt = portal_nach_fg.get(fg0)
+                klaer(f"{a.anzeigename}: gleicher Name wie Fairgate-Kontakt {fg0}, aber andere E-Mail",
+                      [f"Portal-Account «{a.anzeigename}» (ohne FG-Nummer) mit E-Mail {a.email}",
+                       f"Fairgate-Kontakt «{k.vorname} {k.nachname}» ({fg0}) mit E-Mail {k.email or k.eltern_email or '—'}"]
+                      + ([f"Zur FG-Nummer {fg0} gibt es bereits den Account «{alt.anzeigename}» — vermutlich hat sich die Person mit neuer E-Mail neu registriert"] if alt
+                         else ["Vermutlich dieselbe Person mit neuer E-Mail — oder eine Namensgleichheit"]),
+                      ([f"Gleiche Person → Einsätze beider Accounts prüfen; den Account behalten, auf dem die Einsätze laufen: bei «{a.anzeigename}» ({a.email}) Bemerkung «{fg0}» eintragen und den bisherigen Account ({alt.email}) deaktivieren — oder umgekehrt"] if alt
+                       else [f"Gleiche Person → im Portal bei «{a.anzeigename}» Bemerkung «{fg0}» eintragen; Zielwert und Gruppe «Mitglied» setzt danach der nächste Abgleich automatisch"])
+                      + ["Andere Person (Namensgleichheit) → nichts tun"],
+                      helper_id=a.id, fg=fg0)
                 fg_zugeordnet.update(per_name)
             elif a.typ == Typ.UNBEKANNT:
                 # Fall I: Unbekannte mit Einsätzen → Freiwillige (Vereinsregel, automatisiert)
@@ -296,13 +339,19 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
         regel = regeln.fuer_kategorie(k.kategorie)
         alter = _alter(k.geburtsdatum, heute)
         if alter is None and k.geburtsdatum:
-            klaer(f"{k.vorname} {k.nachname} ({fg}): Geburtsdatum «{k.geburtsdatum}» nicht lesbar "
-                  "(erwartet JJJJ-MM-TT oder TT.MM.JJJJ) — in Fairgate korrigieren.")
+            klaer(f"{k.vorname} {k.nachname} ({fg}): Geburtsdatum in Fairgate nicht lesbar",
+                  [f"Fairgate-Kontakt {fg} hat das Geburtsdatum «{k.geburtsdatum}» — erwartet JJJJ-MM-TT oder TT.MM.JJJJ",
+                   "Ohne Alter kann das Cockpit nicht entscheiden, ob die eigene oder die Eltern-E-Mail gilt"],
+                  ["In Fairgate das Geburtsdatum korrigieren; der nächste Abgleich legt den Account dann an"],
+                  wo="Fairgate", fg=fg)
             continue
         mail = _ziel_email(k, regeln, heute)
         if not mail:
-            klaer(f"{k.vorname} {k.nachname} ({fg}): keine erreichbare E-Mail (weder eigene noch "
-                  "Haushalt) — in Fairgate nachtragen.")
+            klaer(f"{k.vorname} {k.nachname} ({fg}): keine E-Mail in Fairgate",
+                  [f"Fairgate-Kontakt {fg} hat weder eine eigene noch eine Eltern-E-Mail",
+                   "Ohne E-Mail kann im Portal kein Account angelegt werden"],
+                  ["In Fairgate eine E-Mail (eigene oder Eltern) nachtragen; der nächste Abgleich legt den Account dann an"],
+                  wo="Fairgate", fg=fg)
             continue
         e.neueintritte.append(ImportZeile(
             vorname=k.vorname, nachname=k.nachname, email=mail, telefon=k.telefon,

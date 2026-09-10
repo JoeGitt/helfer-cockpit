@@ -1,6 +1,10 @@
 import datetime
 import pytest
 from cockpit.abgleich import gleiche_ab
+
+def _kt(kf):
+    """Klärfall (dict) als durchsuchbarer Text."""
+    return kf if isinstance(kf, str) else " ".join([kf["titel"]] + kf["fakten"] + kf["optionen"])
 from cockpit.fairgate_reader import FgKontakt
 from cockpit.model import classify
 from cockpit.settings import Regeln, KategorieRegel
@@ -65,16 +69,6 @@ def test_zielwert_korrektur_fuer_zweitaccount():
     korr = [z for z in e.korrekturen if z.vorname == "Rita"]
     assert len(korr) == 1 and korr[0].zielwert == "0" and korr[0].gruppe == ""
 
-def test_feld_leerung_wenn_fairgate_telefon_geleert():
-    konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "l@example.ch",
-                      "phone": "079 111 22 33", "adminRemarks": "FG-1",
-                      "groups": [{"id": 1, "name": "Mitglied"}],
-                      "stateCache": {"requestedValue": 2.0, "plannedValue": 0}})
-    k = _kontakt(1, "Lina", "Brunner", mail="l@example.ch", geb="2000-01-01")
-    e = gleiche_ab([k], [konto], REGELN, HEUTE)
-    leerungen = [h for h in e.handarbeit if h.art == "leerung"]
-    assert len(leerungen) == 1 and "Telefon" in leerungen[0].detail
-
 
 def test_fg_nachtrag_bei_leerer_bemerkung_wird_korrektur():
     konto = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch",
@@ -100,7 +94,7 @@ def test_fg_nachtrag_bei_belegter_bemerkung_auf_klaerliste():
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
     assert e.neueintritte == [] and e.duplikat_warnungen == [] and e.korrekturen == []
     assert len(e.klaerliste) == 1
-    assert "Bemerkungsfeld" in e.klaerliste[0]
+    assert "Bemerkungsfeld" in _kt(e.klaerliste[0])
 
 def test_sicherheitsstopp_ohne_fg_nummern():
     accounts = [_acc(i, f"A{i}", "B", f"{i}@example.ch", None) for i in range(10)]
@@ -195,7 +189,7 @@ def test_namensgleicher_account_ohne_fg_wird_klaerfall_nicht_importiert():
                  telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
     assert e.neueintritte == [] and not any(z.vorname == "Noah" for z in e.korrekturen)
-    assert len(e.klaerliste) == 1 and "Noah Keller" in e.klaerliste[0] and "FG-8" in e.klaerliste[0]
+    assert len(e.klaerliste) == 1 and "Noah Keller" in _kt(e.klaerliste[0]) and "FG-8" in _kt(e.klaerliste[0])
 
 
 # ---- Minor: Geburtsdatum auch DD.MM.YYYY, unparseable -> Klärliste ------
@@ -210,7 +204,7 @@ def test_geburtsdatum_unparsebar_landet_auf_klaerliste():
     e = gleiche_ab([_kontakt(9, "Neu", "Kind", geb="nicht-lesbar")], [], REGELN, HEUTE)
     assert e.neueintritte == []
     assert len(e.klaerliste) == 1
-    assert "Geburtsdatum" in e.klaerliste[0]
+    assert "Geburtsdatum" in _kt(e.klaerliste[0]) and e.klaerliste[0]["wo"] == "Fairgate"
 
 
 def test_geburtsdatum_unparsebar_loest_keinen_austritt_aus():
@@ -323,7 +317,9 @@ def test_fall_c_nur_mail_passt_wird_klaerfall_mit_vorschlag():
     a = _acc(1, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
     e = gleiche_ab([_k_erw(5, "Jan", "Odermatt", "familie@example.ch")], [a], REGELN, HEUTE)
     assert e.neueintritte == [] and e.korrekturen == []
-    assert len(e.klaerliste) == 1 and "FG-5" in e.klaerliste[0] and "Zweitaccount" in e.klaerliste[0]
+    kf = e.klaerliste[0]
+    assert len(e.klaerliste) == 1 and "FG-5" in _kt(kf) and kf["wo"] == "Portal" and kf["helper_id"] == 1
+    assert len(kf["optionen"]) == 2 and any("Elternteil" in o for o in kf["optionen"])
 
 def test_fall_d_exakter_treffer_bei_bestehendem_mitgliedsaccount_wird_zweitaccount():
     haupt = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1")
@@ -382,4 +378,24 @@ def test_bemerkung_belegt_verhindert_fg_nachtrag_und_gibt_klaerfall():
     e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")],
                    [a, _acc(2, "Andere", "Person", "andere@example.ch", "FG-2")], REGELN, HEUTE)
     assert not any(z.vorname == "Lina" for z in e.korrekturen) and e.neueintritte == []
-    assert len(e.klaerliste) == 1 and "belegt" in e.klaerliste[0]
+    assert len(e.klaerliste) == 1 and "belegt" in _kt(e.klaerliste[0])
+
+
+def test_fall_c1_gleiche_mail_bei_bestehendem_mitgliedsaccount_ist_zweitaccount_automatisch():
+    # Mutter (eigener Account, ohne FG, nicht «Freiwillige») nutzt die E-Mail, die in Fairgate beim
+    # Sohn steht; der Sohn hat bereits seinen Mitglieds-Account mit FG → eindeutig Zweitaccount.
+    sohn = _acc(1, "Jan", "Odermatt", "jan@example.ch", "FG-5")
+    mutter = _acc(2, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Foodbox",), ziel=2.0)
+    k = _kontakt(5, "Jan", "Odermatt", mail="jan@example.ch", eltern="familie@example.ch", geb="2000-01-01")
+    k.alle_emails = ["jan@example.ch", "familie@example.ch"]
+    e = gleiche_ab([k], [sohn, mutter], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.vorname == "Petra")
+    assert z.bemerkungen == "FG-5" and z.zielwert == "0" and set(z.gruppe.split(", ")) == {"Foodbox", "Freiwillige"}
+    assert "Zweitaccount von FG-5" in z.grund and "Jan Odermatt" in z.grund
+    assert e.klaerliste == [] and e.neueintritte == []
+
+def test_telefon_nur_im_portal_ist_keine_massnahme():
+    a = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch", "phone": "+41790000000",
+                  "adminRemarks": "FG-1", "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0}})
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a], REGELN, HEUTE)
+    assert e.handarbeit == [] and e.korrekturen == []
