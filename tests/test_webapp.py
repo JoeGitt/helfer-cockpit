@@ -280,6 +280,7 @@ def test_stand_enthaelt_alle_accounts_mit_portal_link(tmp_path):
     assert len(d["alle_accounts"]) == 10
     a = next(x for x in d["alle_accounts"] if x["id"] == 101)
     assert a["typ"] == "zweitaccount" and a["fg"] == "FG-2417" and a["num_ok"] == 2
+    assert a["email"] == "reto@example.ch"
     assert a["portal_url"] == "https://app.helfereinsatz.ch/pfadi-winterthur-handball/de/helpers/detail/101"
     # auch die Accounts innerhalb der Mitglieder tragen id + Portal-Link
     m = next(x for x in d["mitglieder"] if x["fg"] == "FG-2417")

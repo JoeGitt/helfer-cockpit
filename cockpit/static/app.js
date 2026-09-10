@@ -456,27 +456,65 @@ function klaerItem(key, kf) {
   const done = !!W.checks[key];
   const fakten = (kf.fakten || []).map((f) => `<li>${esc(f)}</li>`).join("");
   const optionen = (kf.optionen || []).map((o) => { const [wenn, dann] = o.split(" → "); return `<li><b>${esc(wenn)}</b>${dann ? ` → ${esc(dann)}` : ""}</li>`; }).join("");
-  return `<li class="${done ? "done" : ""} klaer"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Entschieden: ${esc(kf.titel)}">
+  const schritte = (kf.schritte || []).map((s) => `<li>${esc(s)}</li>`).join("");
+  const links = kf.links ? kf.links.map((l) => plink(l.url, l.text)).join("") : plink(kf.portal_url, "Im Portal öffnen");
+  return `<li class="${done ? "done" : ""} klaer"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(kf.titel)}">
     <div class="t"><b>${esc(kf.titel)}</b> ${kf.wo ? `<span class="typ ${kf.wo === "Fairgate" ? "" : "mitglied"}">${esc(kf.wo)}</span>` : ""}
-      ${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${optionen ? `<ul class="optionen">${optionen}</ul>` : ""}</div>
-    <div class="a">${plink(kf.portal_url, "Im Portal öffnen")}</div></li>`;
+      ${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${schritte ? `<ol class="schritte">${schritte}</ol>` : ""}${optionen ? `<ul class="optionen">${optionen}</ul>` : ""}</div>
+    <div class="a">${links}</div></li>`;
+}
+// Portal-eigene Befunde (D3 Doppel-Mitglied, D10 Neuregistrierung) als konkrete Schritt-Anweisungen
+function portalBefunde(d) {
+  const acc = S.daten ? S.daten.alle_accounts : [];
+  const inKlaerfall = new Set((d.klaerliste || []).map((k) => nameAus(k.titel)));
+  const eins = (x) => `${x.num_ok} geleistet, ${x.num_confirmed} zugesagt`;
+  const items = [];
+  (S.daten ? S.daten.hinweise : []).forEach((h) => {
+    if (h.code === "D10") h.betroffene.forEach((b, i) => {
+      const name = nameAus(b), fgs = (b.match(/FG-\d+/g) || []);
+      if (inKlaerfall.has(name)) return;                       // Fall E im Klärfall deckt das ab
+      const ohne = acc.find((x) => x.name === name && !x.fg), mit = acc.find((x) => x.fg === fgs[0] && x.typ === "mitglied");
+      items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fgs[0] || "FG-Nummer"}, einer ohne`, wo: "Portal",
+        fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)}` : `Account ohne FG-Nummer: ${b}`,
+                 mit ? `Account mit ${mit.fg}: E-Mail ${mit.email} · ${eins(mit)}` : `Account mit ${fgs[0]}`,
+                 "Vermutlich hat sich die Person mit neuer E-Mail neu registriert — sonst zählen ihre Einsätze nicht zum Kontingent"],
+        schritte: ["Bei beiden Accounts nachsehen, wo die aktuellen Einsätze laufen (Links rechts)",
+                   "Den Account behalten, den die Person heute benutzt — meist der neuere. Hat er keine FG-Nummer: Bemerkung «" + (fgs[0] || "FG-…") + "» eintragen, Gruppe «Mitglied», Zielwert wie beim alten Account",
+                   "Einsätze des anderen Accounts umhängen: Portal → Event → Einsatz bearbeiten → andere Person zuweisen",
+                   "Den anderen Account deaktivieren (nicht löschen — die Historie bleibt)"],
+        links: [ohne && { url: ohne.portal_url, text: "Account ohne FG" }, mit && { url: mit.portal_url, text: mit.fg }].filter(Boolean) });
+    });
+    if (h.code === "D3") h.betroffene.forEach((fg, i) => {
+      const konten = acc.filter((x) => x.fg === fg && x.typ === "mitglied");
+      items.push({ key: `d:D3:${i}`, titel: `${fg}: ${konten.length} Mitglieds-Accounts mit derselben FG-Nummer`, wo: "Portal",
+        fakten: konten.map((x) => `${x.name}: E-Mail ${x.email} · ${eins(x)}`).concat(["Das Kontingent rechnet bis zur Bereinigung mit dem höchsten Zielwert"]),
+        schritte: ["Prüfen, ob es dieselbe Person ist",
+                   "Dieselbe Person → Einsätze auf einen Account umhängen (Event → Einsatz bearbeiten → Person zuweisen), den anderen deaktivieren",
+                   "Zwei Personen (z. B. Elternteil) → beim Nicht-Mitglied Gruppe «Mitglied» entfernen, Gruppe «Freiwillige» setzen, Zielwert 0; die FG-Nummer bleibt (Zweitaccount)"],
+        links: konten.map((x) => ({ url: x.portal_url, text: x.name })) });
+    });
+  });
+  return items;
 }
 function renderChecklist() {
   const d = W.abgleich; if (!d) return;
   $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Reihenfolge: erst die Punkte im Portal, dann die Import-Datei hochladen, dann Fairgate — sonst entstehen Duplikate.`;
-  const reihenfolge = ["schluessel", "austritt"];
-  const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` })).sort((a, b) => reihenfolge.indexOf(a.art) - reihenfolge.indexOf(b.art));
-  const portalOnly = (S.daten ? S.daten.hinweise : []).filter((h) => ["D3", "D10"].includes(h.code));
+  const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` }));
+  const schluessel = hand.filter((h) => h.art === "schluessel"), austritte = hand.filter((h) => h.art === "austritt");
+  const befunde = portalBefunde(d);
   const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })),
-    ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" })),
-    ...portalOnly.flatMap((h) => h.betroffene.map((b, i) => ({ key: `d:${h.code}:${i}`, t: `${b} — ${h.text}`, k: h.code === "D3" ? "Doppelter Mitglieds-Account" : "Neuregistrierung?" })))];
+    ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" }))];
   const nImport = d.neueintritte + d.korrekturen, imp = basename(d.dateien.import), liste = basename(d.dateien.liste), kont = basename(d.dateien.kontakte || "");
   const sek = (titel, hint, items, cntOk) => `<div class="cl-section"><h3>${titel} <span class="cnt ${cntOk ? "ok" : ""}">${items.length ? `${items.filter((k) => W.checks[k]).length} / ${items.length}` : "nichts zu tun"}</span></h3>${hint ? `<p class="hint">${hint}</p>` : ""}</div>`;
   let html = "";
-  // A · Portal
-  const aKeys = [...hand.map((h) => h.key), ...warn.map((w) => w.key)];
+  // A · Portal — in Untergruppen, jede mit einer Erklärung statt zwölfmal demselben Satz
+  const aKeys = [...hand.map((h) => h.key), ...befunde.map((b) => b.key), ...warn.map((w) => w.key)];
   html += sek("A · Im Portal von Hand", `Was der Import nicht kann: deaktivieren und Doppel-Accounts bereinigen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
-  if (aKeys.length) html += `<ul class="checklist">${hand.map((h) => clItem(h.key, `${ART_LABEL[h.art] || h.art}: ${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}${warn.map((w) => clItem(w.key, `${w.k} — von Hand prüfen`, w.t)).join("")}</ul>`;
+  const sub = (titel, n, why) => `<div class="cl-sub">${titel} <span class="cnt">${n}</span> <span class="why">${why}</span></div>`;
+  if (schluessel.length) html += sub("E-Mail im Portal nachführen", schluessel.length, "— sonst legt der Import ein Duplikat an") + `<ul class="checklist">${schluessel.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
+  if (austritte.length) html += sub("Austritte deaktivieren", austritte.length, "— diese Mitglieder stehen nicht mehr in Fairgate; im Portal deaktivieren, der Import löscht nichts") + `<ul class="checklist kompakt">${austritte.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail.includes("Achtung") ? h.detail.split("Achtung: ")[1] : "", plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
+  if (befunde.length) html += sub("Doppelte Accounts zusammenführen", befunde.length, "— eine Person, zwei Accounts: Einsätze umhängen, einen deaktivieren") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
+  if (warn.length) html += sub("Von Hand prüfen", warn.length, "") + `<ul class="checklist">${warn.map((w) => clItem(w.key, `${w.k}`, w.t)).join("")}</ul>`;
   // B · Import — das Herzstück, darum als eigene erklärende Karte
   const bKeys = nImport ? ["imp"] : [];
   html += sek("B · Import-Datei ins Portal hochladen", nImport ? "" : "Keine Neueintritte oder Korrekturen — dieses Mal ist kein Import nötig.", bKeys, bKeys.every((k) => W.checks[k]));

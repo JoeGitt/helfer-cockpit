@@ -307,7 +307,8 @@
   .howto{margin:14px 0 0; padding:0; list-style:none; display:grid; gap:8px; max-width:70ch}
   .howto li{display:grid; grid-template-columns:24px 1fr; gap:10px; font-size:13.5px}
   .howto .n{width:22px; height:22px; border-radius:50%; background:var(--surface2); color:var(--ink2); font:700 11.5px var(--display); display:flex; align-items:center; justify-content:center}
-  .howto b{display:block}
+  .howto li > div > b{display:block}
+  .howto span b{display:inline; color:var(--ink)}
   .howto span{color:var(--muted); font-size:12.5px}
   .plausi{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
   .plausi .pill{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; background:var(--surface2); border-radius:99px; padding:4px 11px}
@@ -315,10 +316,12 @@
   .ack{display:flex; align-items:flex-start; gap:10px; margin-top:12px; padding:10px 12px; background:var(--warn-soft); color:var(--warn); border-radius:var(--r-sm); font-size:13px; font-weight:500}
   .ack input{margin-top:3px; accent-color:var(--warn)}
   .checklist{margin:0; padding:0; list-style:none}
-  .checklist li{display:grid; grid-template-columns:24px 1fr auto; gap:12px; align-items:start; padding:10px 6px; border-bottom:1px solid var(--border); font-size:13.5px}
-  .checklist li:last-child{border-bottom:none}
-  .checklist input{width:18px; height:18px; margin-top:1px; accent-color:var(--ok); cursor:pointer}
-  .checklist li.done .t{color:var(--muted); text-decoration:line-through; text-decoration-color:var(--border-strong)}
+  /* Nur die direkten Zeilen sind Grid — verschachtelte Listen (Fakten, Schritte, Optionen) nicht! */
+  .checklist > li{display:grid; grid-template-columns:24px 1fr auto; gap:12px; align-items:start; padding:10px 6px; border-bottom:1px solid var(--border); font-size:13.5px}
+  .checklist > li:last-child{border-bottom:none}
+  .checklist > li > input{width:18px; height:18px; margin-top:1px; accent-color:var(--ok); cursor:pointer}
+  .checklist > li.done > .t > b{color:var(--muted); text-decoration:line-through; text-decoration-color:var(--border-strong)}
+  .checklist > li.done > .t{color:var(--muted)}
   .checklist .t b{display:block}
   .checklist .t span{color:var(--muted); font-size:12.5px}
   .checklist .a{display:flex; gap:6px}
@@ -327,6 +330,16 @@
   .optionen{margin:8px 0 0; padding-left:0; list-style:none; display:grid; gap:4px; font-size:12.5px}
   .optionen li{padding:6px 10px; background:var(--surface2); border-radius:6px}
   .optionen li b{color:var(--ink)}
+  .cl-sub{display:flex; align-items:baseline; gap:8px; margin:14px 0 4px; font-size:12.5px; font-weight:700}
+  .cl-sub .cnt{font-size:11px; color:var(--muted); font-weight:600; background:var(--surface2); border-radius:99px; padding:1px 7px}
+  .cl-sub .why{font-weight:400; color:var(--muted)}
+  .checklist.kompakt > li{padding:6px 6px}
+  .checklist li.klaer .t{min-width:0}
+  .checklist .fakten li, .checklist .schritte li, .checklist .optionen li{display:list-item; grid-template-columns:none; padding:0; border:none; font-size:12.5px}
+  .checklist .optionen li{padding:6px 10px; list-style:none}
+  .schritte{margin:8px 0 0; padding-left:18px; font-size:12.5px; display:grid; gap:3px}
+  .schritte li{padding:0}
+  .a .plink+.plink{margin-left:8px}
   .cl-section{margin-top:16px}
   .cl-section h3{font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:6px}
   .cl-section h3 .cnt{font-size:11.5px; color:var(--muted); font-weight:600; background:var(--surface2); border-radius:99px; padding:1px 8px}

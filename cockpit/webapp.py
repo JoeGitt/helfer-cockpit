@@ -45,7 +45,7 @@ def portal_url(z, helper_id):
 
 
 def _account_json(z, a):
-    return {"id": a.id, "name": a.anzeigename, "typ": a.typ.value, "gruppen": a.gruppen,
+    return {"id": a.id, "name": a.anzeigename, "email": a.email, "typ": a.typ.value, "gruppen": a.gruppen,
             "fg": a.fg, "zielwert": a.zielwert, "ist_wert": a.ist_wert,
             "num_ok": a.num_ok, "num_nok": a.num_nok, "num_confirmed": a.num_confirmed,
             "num_reserved": a.num_reserved, "bemerkung": a.bemerkung,
