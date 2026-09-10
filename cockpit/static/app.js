@@ -25,7 +25,7 @@ const SCHWERE = {
   warnung:  { titel: "Warnung — im Abgleich oder danach", cls: "warn", farbe: "var(--warn)" },
   hinweis:  { titel: "Hinweis — zur Kenntnis", cls: "info", farbe: "var(--info)" },
 };
-const ART_LABEL = { schluessel: "E-Mail im Portal nachführen", austritt: "Im Portal deaktivieren" };
+const ART_LABEL = { schluessel: "E-Mail im Portal nachführen", austritt: "Im Portal löschen" };
 
 // ------------------------------------------------------------------ Helfer ----
 const $ = (id) => document.getElementById(id);
@@ -452,13 +452,13 @@ function clItem(key, titel, detail, aktionen = "") {
   const done = !!W.checks[key];
   return `<li class="${done ? "done" : ""}"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(titel)}"><div class="t"><b>${esc(titel)}</b>${detail ? `<span>${esc(detail)}</span>` : ""}</div><div class="a">${aktionen}</div></li>`;
 }
-function klaerItem(key, kf) {
+function klaerItem(key, kf, mitHaken = true) {
   const done = !!W.checks[key];
   const fakten = (kf.fakten || []).map((f) => `<li>${esc(f)}</li>`).join("");
-  const optionen = (kf.optionen || []).map((o) => { const [wenn, dann] = o.split(" → "); return `<li><b>${esc(wenn)}</b>${dann ? ` → ${esc(dann)}` : ""}</li>`; }).join("");
+  const optionen = (kf.optionen || []).map((o) => { const i = o.indexOf(" → "); const wenn = i < 0 ? o : o.slice(0, i), dann = i < 0 ? "" : o.slice(i + 3); return `<li><b>${esc(wenn)}</b>${dann ? ` → ${esc(dann)}` : ""}</li>`; }).join("");
   const schritte = (kf.schritte || []).map((s) => `<li>${esc(s)}</li>`).join("");
   const links = kf.links ? kf.links.map((l) => plink(l.url, l.text)).join("") : plink(kf.portal_url, "Im Portal öffnen");
-  return `<li class="${done ? "done" : ""} klaer"><input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(kf.titel)}">
+  return `<li class="${done ? "done" : ""} klaer">${mitHaken ? `<input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(kf.titel)}">` : "<span></span>"}
     <div class="t"><b>${esc(kf.titel)}</b> ${kf.wo ? `<span class="typ ${kf.wo === "Fairgate" ? "" : "mitglied"}">${esc(kf.wo)}</span>` : ""}
       ${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${schritte ? `<ol class="schritte">${schritte}</ol>` : ""}${optionen ? `<ul class="optionen">${optionen}</ul>` : ""}</div>
     <div class="a">${links}</div></li>`;
@@ -474,22 +474,21 @@ function portalBefunde(d) {
       const name = nameAus(b), fgs = (b.match(/FG-\d+/g) || []);
       if (inKlaerfall.has(name)) return;                       // Fall E im Klärfall deckt das ab
       const ohne = acc.find((x) => x.name === name && !x.fg), mit = acc.find((x) => x.fg === fgs[0] && x.typ === "mitglied");
-      items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fgs[0] || "FG-Nummer"}, einer ohne`, wo: "Portal",
-        fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)}` : `Account ohne FG-Nummer: ${b}`,
-                 mit ? `Account mit ${mit.fg}: E-Mail ${mit.email} · ${eins(mit)}` : `Account mit ${fgs[0]}`,
-                 "Vermutlich hat sich die Person mit neuer E-Mail neu registriert — sonst zählen ihre Einsätze nicht zum Kontingent"],
-        schritte: ["Bei beiden Accounts nachsehen, wo die aktuellen Einsätze laufen (Links rechts)",
-                   "Den Account behalten, den die Person heute benutzt — meist der neuere. Hat er keine FG-Nummer: Bemerkung «" + (fgs[0] || "FG-…") + "» eintragen, Gruppe «Mitglied», Zielwert wie beim alten Account",
-                   "Einsätze des anderen Accounts umhängen: Portal → Event → Einsatz bearbeiten → andere Person zuweisen",
-                   "Den anderen Account deaktivieren (nicht löschen — die Historie bleibt)"],
+      const fg = fgs[0] || "FG-…", mailOhne = ohne ? ohne.email : "?", mailMit = mit ? mit.email : "?";
+      items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fg}, einer ohne. Zweitaccount oder Ersatz?`, wo: "Portal",
+        fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)} — Link «Account ohne FG» rechts` : `Account ohne FG-Nummer: ${b}`,
+                 mit ? `Account mit ${mit.fg}: E-Mail ${mit.email} · ${eins(mit)} — Link «${mit.fg}» rechts` : `Account mit ${fg}`,
+                 "Entscheidungshilfe: Steht in der E-Mail des Accounts ohne FG-Nummer der eigene Vorname, ist es dieselbe Person mit neuer Adresse. Steht ein anderer Vorname zum gleichen Nachnamen (Familienadresse), ist es der Zweitaccount eines Elternteils.",
+                 "Der Import hat den Account ohne FG-Nummer bereits auf «Freiwillige», Zielwert 0 gesetzt — das passt in beiden Fällen"],
+        optionen: [`Zweitaccount (Elternteil) → beide Accounts bleiben; beim Account ohne FG-Nummer (${mailOhne}) im Portal die Bemerkung «${fg}» eintragen — ab dann zählen seine Einsätze dem Mitglied`,
+                   `Dieselbe Person mit neuer E-Mail → Einsätze des Accounts ohne FG-Nummer (${mailOhne}) auf den Account ${fg} (${mailMit}) umhängen (Portal: Event öffnen, Einsatz bearbeiten, Person wechseln); dort die E-Mail auf ${mailOhne} ändern; danach den Account ohne FG-Nummer löschen (Helfende, Person, «Helfer:in löschen» — unwiderruflich)`],
         links: [ohne && { url: ohne.portal_url, text: "Account ohne FG" }, mit && { url: mit.portal_url, text: mit.fg }].filter(Boolean) });
     });
     if (h.code === "D3") h.betroffene.forEach((fg, i) => {
       const konten = acc.filter((x) => x.fg === fg && x.typ === "mitglied");
       items.push({ key: `d:D3:${i}`, titel: `${fg}: ${konten.length} Mitglieds-Accounts mit derselben FG-Nummer`, wo: "Portal",
         fakten: konten.map((x) => `${x.name}: E-Mail ${x.email} · ${eins(x)}`).concat(["Das Kontingent rechnet bis zur Bereinigung mit dem höchsten Zielwert"]),
-        schritte: ["Prüfen, ob es dieselbe Person ist",
-                   "Dieselbe Person → Einsätze auf einen Account umhängen (Event → Einsatz bearbeiten → Person zuweisen), den anderen deaktivieren",
+        optionen: ["Dieselbe Person → Einsätze auf einen Account umhängen (Portal: Event öffnen, Einsatz bearbeiten, Person wechseln), dann den anderen Account löschen (Helfende, Person, «Helfer:in löschen» — unwiderruflich)",
                    "Zwei Personen (z. B. Elternteil) → beim Nicht-Mitglied Gruppe «Mitglied» entfernen, Gruppe «Freiwillige» setzen, Zielwert 0; die FG-Nummer bleibt (Zweitaccount)"],
         links: konten.map((x) => ({ url: x.portal_url, text: x.name })) });
     });
@@ -508,12 +507,11 @@ function renderChecklist() {
   const sek = (titel, hint, items, cntOk) => `<div class="cl-section"><h3>${titel} <span class="cnt ${cntOk ? "ok" : ""}">${items.length ? `${items.filter((k) => W.checks[k]).length} / ${items.length}` : "nichts zu tun"}</span></h3>${hint ? `<p class="hint">${hint}</p>` : ""}</div>`;
   let html = "";
   // A · Portal — in Untergruppen, jede mit einer Erklärung statt zwölfmal demselben Satz
-  const aKeys = [...hand.map((h) => h.key), ...befunde.map((b) => b.key), ...warn.map((w) => w.key)];
-  html += sek("A · Im Portal von Hand", `Was der Import nicht kann: deaktivieren und Doppel-Accounts bereinigen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
+  const aKeys = [...hand.map((h) => h.key), ...warn.map((w) => w.key)];
+  html += sek("A · Im Portal von Hand", `Was der Import nicht kann: E-Mails umschreiben und Austritte löschen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
   const sub = (titel, n, why) => `<div class="cl-sub">${titel} <span class="cnt">${n}</span> <span class="why">${why}</span></div>`;
   if (schluessel.length) html += sub("E-Mail im Portal nachführen", schluessel.length, "— sonst legt der Import ein Duplikat an") + `<ul class="checklist">${schluessel.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
-  if (austritte.length) html += sub("Austritte deaktivieren", austritte.length, "— diese Mitglieder stehen nicht mehr in Fairgate; im Portal deaktivieren, der Import löscht nichts") + `<ul class="checklist kompakt">${austritte.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail.includes("Achtung") ? h.detail.split("Achtung: ")[1] : "", plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
-  if (befunde.length) html += sub("Doppelte Accounts zusammenführen", befunde.length, "— eine Person, zwei Accounts: Einsätze umhängen, einen deaktivieren") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
+  if (austritte.length) html += sub("Austritte im Portal löschen", austritte.length, "— nicht mehr in Fairgate. Das Portal kennt kein Deaktivieren: Person öffnen, «Helfer:in löschen» (unwiderruflich, vergangene Einsätze verschwinden aus der Statistik)") + `<ul class="checklist kompakt">${austritte.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
   if (warn.length) html += sub("Von Hand prüfen", warn.length, "") + `<ul class="checklist">${warn.map((w) => clItem(w.key, `${w.k}`, w.t)).join("")}</ul>`;
   // B · Import — das Herzstück, darum als eigene erklärende Karte
   const bKeys = nImport ? ["imp"] : [];
@@ -538,12 +536,14 @@ function renderChecklist() {
     <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
   // C · Klärfälle — Entscheidungen, mit Fakten und Optionen
-  const cKeys = d.klaerliste.map((_, i) => `k:${i}`);
-  html += sek("C · Klärfälle — hier entscheidest du", d.klaerliste.length ? "Jeder Punkt sagt, um welchen Account es geht, was bekannt ist und was bei welcher Antwort zu tun ist. Meist im Portal — den Rest erledigt der nächste Abgleich automatisch." : "", cKeys, cKeys.every((k) => W.checks[k]));
-  if (cKeys.length) html += `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
-  // Info: möglicher Zweitaccount u. ä. — keine Häkchen
+  const cKeys = [...d.klaerliste.map((_, i) => `k:${i}`), ...befunde.map((b) => b.key)];
+  html += sek("C · Klärfälle — hier entscheidest du", cKeys.length ? "Erst nach dem Import, damit die Import-Datei gültig bleibt. Jeder Punkt sagt, um welchen Account es geht, was bekannt ist und was bei welcher Antwort zu tun ist — den Rest erledigt der nächste Abgleich automatisch." : "", cKeys, cKeys.every((k) => W.checks[k]));
+  if (d.klaerliste.length) html += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
+  if (befunde.length) html += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie? Zweitaccount behalten, Ersatz-Account zusammenführen") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
+  // Info: möglicher Zweitaccount — der Import stimmt so oder so, nur die FG-Nummer wäre ein Gewinn
   const hinweise = d.hinweise || [];
-  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((t) => `<li><span></span><div class="t"><span>${esc(t)}</span></div><div class="a"></div></li>`).join("")}</ul></details>`;
+  const mitEins = hinweise.filter((h) => h.einsaetze).length;
+  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} mögliche Elternteile werden Freiwillige — der Import erledigt das, ${mitEins ? `${mitEins} davon haben Einsätze: lohnt sich zu prüfen` : "keiner davon hat Einsätze"}</summary><p class="hint" style="margin:8px 0">Gleicher Nachname wie ein Mitglied, aber nirgends in Fairgate. Freiwillige(r) mit Zielwert 0 ist in jedem Fall richtig. Ist es ein Elternteil, bringt die FG-Nummer in der Bemerkung dem Kind die Einsätze — sonst nichts tun.</p><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
   const abw = d.kontakt_abweichungen || [];
   if (abw.length) html += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
   $("wiz-3-liste").innerHTML = html;

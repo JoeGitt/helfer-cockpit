@@ -94,7 +94,9 @@ def handarbeitsliste_html(e):
         teile += [punkt(f"{h.name} ({h.fg}): {h.detail}") for h in schluessel]
         teile.append("</ul>")
     if austritte:
-        teile.append("<h2>2 · Austritte deaktivieren</h2><ul>")
+        teile.append("<h2>2 · Austritte im Portal löschen</h2>"
+                     "<p>Das Portal kennt kein Deaktivieren: Helfende → Person → «Helfer:in löschen» "
+                     "(unwiderruflich; vergangene Einsätze verschwinden aus der Statistik).</p><ul>")
         teile += [punkt(f"{h.name} ({h.fg}): {h.detail}") for h in austritte]
         teile.append("</ul>")
     if e.duplikat_warnungen:
@@ -122,8 +124,15 @@ def handarbeitsliste_html(e):
         teile.append("<p>Nichts zu tun — alles synchron. 🎉</p>")
     hinweise = getattr(e, "hinweise", [])
     if hinweise:
-        teile.append("<h2>Hinweise (keine Handarbeit nötig)</h2><ul>")
-        teile += [f"<li>{html_mod.escape(t)}</li>" for t in hinweise]
+        teile.append("<h2>Hinweise — der Import erledigt sie, optional prüfen</h2><ul>")
+        for h in hinweise:
+            if isinstance(h, dict):
+                teile.append("<li><b>" + html_mod.escape(h["titel"]) + "</b><ul>"
+                             + "".join(f"<li>{html_mod.escape(f)}</li>" for f in h.get("fakten", []))
+                             + "</ul><ul>" + "".join(f"<li>→ {html_mod.escape(o)}</li>" for o in h.get("optionen", []))
+                             + "</ul></li>")
+            else:
+                teile.append(f"<li>{html_mod.escape(str(h))}</li>")
         teile.append("</ul>")
     abw = getattr(e, "kontakt_abweichungen", [])
     if abw:

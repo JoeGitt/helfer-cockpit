@@ -69,7 +69,9 @@ def _abgleich_json(z, ergebnis):
         "kontakt_abweichungen": [{**a, "portal_url": portal_url(z, a["helper_id"]) if a.get("helper_id") else None}
                                  for a in ergebnis.kontakt_abweichungen],
         "kategorien": ergebnis.kategorien,
-        "hinweise": ergebnis.hinweise,
+        "hinweise": [({**h, "portal_url": portal_url(z, h["helper_id"]) if h.get("helper_id") else None}
+                      if isinstance(h, dict) else {"titel": str(h), "fakten": [], "optionen": [], "portal_url": None})
+                     for h in ergebnis.hinweise],
         "import_vorschau": _import_vorschau(ergebnis),
     }
 

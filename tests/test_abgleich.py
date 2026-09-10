@@ -311,7 +311,8 @@ def test_fall_b_mit_gleichem_nachnamen_gibt_zweitaccount_hinweis():
     e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")], REGELN, HEUTE)
     assert any(z.vorname == "Reto" and z.zielwert == "0" for z in e.korrekturen)      # trotzdem automatisch
     assert e.klaerliste == []                                                        # kein Pflicht-Häkchen
-    assert len(e.hinweise) == 1 and "Reto Brunner" in e.hinweise[0] and "FG-1" in e.hinweise[0]
+    assert len(e.hinweise) == 1 and "Reto Brunner" in e.hinweise[0]["titel"] and "FG-1" in e.hinweise[0]["titel"]
+    assert e.hinweise[0]["helper_id"] == 1 and "Lina Brunner" in _kt(e.hinweise[0])   # Mitglied namentlich genannt
 
 def test_fall_c_nur_mail_passt_wird_klaerfall_mit_vorschlag():
     a = _acc(1, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
@@ -399,3 +400,57 @@ def test_telefon_nur_im_portal_ist_keine_massnahme():
                   "adminRemarks": "FG-1", "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0}})
     e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a], REGELN, HEUTE)
     assert e.handarbeit == [] and e.korrekturen == []
+
+# ---- 10.09.2026 abends: Löschen statt Deaktivieren, Fall E mit zwei Zweigen, Telefon ----
+
+def test_austritt_nennt_offene_einsaetze_oder_keine():
+    a = _acc(1, "Weg", "Gezogen", "w@example.ch", "FG-1")
+    e = gleiche_ab([], [a], REGELN, HEUTE)
+    assert "Keine offenen Einsätze" in e.handarbeit[0].detail and "deaktivier" not in e.handarbeit[0].detail
+    b = classify({"id": 2, "firstName": "Noch", "lastName": "Aktiv", "email": "n@example.ch", "adminRemarks": "FG-2",
+                  "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 1, "confirmedAssignmentsNum": 3}})
+    e = gleiche_ab([], [b], REGELN, HEUTE)
+    assert "3 offene Einsätze" in e.handarbeit[0].detail
+
+def test_fall_e_mit_bestehendem_account_bietet_zweitaccount_und_ersatz_an():
+    neu = _acc(1, "Lina", "Brunner", "mama.brunner@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    alt = _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")
+    k = _k_erw(1, "Lina", "Brunner", "")
+    k.telefon = "079 000 00 00"
+    e = gleiche_ab([k], [neu, alt], REGELN, HEUTE)
+    kf = e.klaerliste[0]
+    t = _kt(kf)
+    assert "—" not in " ".join(kf["fakten"]) and "keiner E-Mail" in t and "079 000 00 00" in t
+    assert any(o.startswith("Zweitaccount") for o in kf["optionen"])
+    assert any(o.startswith("Dieselbe Person") and "löschen" in o and "lina@example.ch" in o for o in kf["optionen"])
+    assert all(o.count(" → ") == 1 for o in kf["optionen"])        # das Frontend trennt am ersten Pfeil
+    assert not any(z.vorname == "Lina" and z.email == "mama.brunner@example.ch" for z in e.korrekturen)
+
+def test_fall_e_erledigter_namensvetter_taucht_nicht_mehr_auf():
+    # Gleicher Name, bereits Freiwillige(r) mit Zielwert 0, Mitglied hat eigenen Account → still
+    nv = _acc(1, "Lina", "Brunner", "andere@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
+    alt = _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [nv, alt], REGELN, HEUTE)
+    assert e.klaerliste == [] and e.neueintritte == []
+
+def test_fall_e_ohne_bestehenden_account_bleibt_klaerfall():
+    nv = _acc(1, "Lina", "Brunner", "andere@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [nv], REGELN, HEUTE)
+    assert len(e.klaerliste) == 1 and e.neueintritte == []          # sonst entstünde ein Duplikat
+
+def test_neueintritt_ohne_mail_nennt_telefon_zum_anrufen():
+    k = _kontakt(9, "Neu", "Kind", eltern="")
+    k.telefon = "052 111 22 33"
+    e = gleiche_ab([k], [], REGELN, HEUTE)
+    t = _kt(e.klaerliste[0])
+    assert "052 111 22 33" in t and "Anrufen" in t
+
+def test_nachnamen_hinweis_ist_strukturiert_und_nach_einsaetzen_sortiert():
+    ohne = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    mit = classify({"id": 3, "firstName": "Urs", "lastName": "Brunner", "email": "urs@example.ch", "adminRemarks": "",
+                    "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0, "okAssignmentsNum": 4}})
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(4, "Eva", "Keller", "eva@example.ch")],
+                   [ohne, mit, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1"), _acc(4, "Eva", "Keller", "eva@example.ch", "FG-4")], REGELN, HEUTE)
+    assert [h["titel"].split(":")[0] for h in e.hinweise] == ["Urs Brunner", "Reto Brunner"]
+    assert all(h["wo"] == "Portal" and h["fg"] == "FG-1" for h in e.hinweise)
+    assert any("Bemerkung «FG-1»" in o for o in e.hinweise[0]["optionen"])
