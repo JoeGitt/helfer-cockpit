@@ -474,14 +474,18 @@ function portalBefunde(d) {
       const name = nameAus(b), fgs = (b.match(/FG-\d+/g) || []);
       if (inKlaerfall.has(name)) return;                       // Fall E im Klärfall deckt das ab
       const ohne = acc.find((x) => x.name === name && !x.fg), mit = acc.find((x) => x.fg === fgs[0] && x.typ === "mitglied");
+      // Wie der Server (Fall E): ein Namensvetter, der schon Freiwillige(r) mit Zielwert 0 ist, gilt als erledigt
+      const erledigt = ohne && ohne.typ === "freiwillig" && !ohne.zielwert && !(ohne.gruppen || []).includes("Mitglied");
+      if (erledigt) return;
       const fg = fgs[0] || "FG-…", mailOhne = ohne ? ohne.email : "?", mailMit = mit ? mit.email : "?";
       items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fg}, einer ohne. Zweitaccount oder Ersatz?`, wo: "Portal",
         fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)} — Link «Account ohne FG» rechts` : `Account ohne FG-Nummer: ${b}`,
                  mit ? `Account mit ${mit.fg}: E-Mail ${mit.email} · ${eins(mit)} — Link «${mit.fg}» rechts` : `Account mit ${fg}`,
                  "Entscheidungshilfe: Steht in der E-Mail des Accounts ohne FG-Nummer der eigene Vorname, ist es dieselbe Person mit neuer Adresse. Steht ein anderer Vorname zum gleichen Nachnamen (Familienadresse), ist es der Zweitaccount eines Elternteils.",
-                 "Der Import hat den Account ohne FG-Nummer bereits auf «Freiwillige», Zielwert 0 gesetzt — das passt in beiden Fällen"],
+                 "Der Import hat den Account ohne FG-Nummer auf «Freiwillige», Zielwert 0 gesetzt (falls er das nicht schon war) — das passt in beiden Fällen"],
         optionen: [`Zweitaccount (Elternteil) → beide Accounts bleiben; beim Account ohne FG-Nummer (${mailOhne}) im Portal die Bemerkung «${fg}» eintragen — ab dann zählen seine Einsätze dem Mitglied`,
-                   `Dieselbe Person mit neuer E-Mail → Einsätze des Accounts ohne FG-Nummer (${mailOhne}) auf den Account ${fg} (${mailMit}) umhängen (Portal: Event öffnen, Einsatz bearbeiten, Person wechseln); dort die E-Mail auf ${mailOhne} ändern; danach den Account ohne FG-Nummer löschen (Helfende, Person, «Helfer:in löschen» — unwiderruflich)`],
+                   `Dieselbe Person mit neuer E-Mail → Einsätze des Accounts ohne FG-Nummer (${mailOhne}) auf den Account ${fg} (${mailMit}) umhängen (Portal: Event öffnen, Einsatz bearbeiten, Person wechseln); dort die E-Mail auf ${mailOhne} ändern; danach den Account ohne FG-Nummer löschen (Helfende, Person, «Helfer:in löschen» — unwiderruflich)`,
+                   "Andere Person (nur Namensgleichheit) → nichts weiter tun; nach dem Import taucht der Fall nicht mehr auf"],
         links: [ohne && { url: ohne.portal_url, text: "Account ohne FG" }, mit && { url: mit.portal_url, text: mit.fg }].filter(Boolean) });
     });
     if (h.code === "D3") h.betroffene.forEach((fg, i) => {
