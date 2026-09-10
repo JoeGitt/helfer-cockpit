@@ -354,10 +354,22 @@ function wizZeige(step) {
   $("wiz-start").hidden = step !== 0;
   [1, 2, 3, 4].forEach((n) => { $(`wiz-${n}`).hidden = step !== n; });
   $("wiz-fertig").hidden = step !== 5;
+  W.maxStep = Math.max(W.maxStep || 0, step);
   document.querySelectorAll("#wiz-steps li").forEach((li) => {
     const n = Number(li.dataset.step);
     li.dataset.state = step === 5 || n < step ? "fertig" : n === step ? "aktiv" : "offen";
+    const erreichbar = n <= (W.maxStep || 0) && step !== 5 && step !== 0;
+    li.classList.toggle("klickbar", erreichbar);
+    li.setAttribute("tabindex", erreichbar ? "0" : "-1");
+    li.setAttribute("role", erreichbar ? "button" : "");
+    li.title = erreichbar ? `Zu Schritt ${n} wechseln — nichts geht verloren` : "";
   });
+}
+function wizTabKlick(li) {
+  const n = Number(li.dataset.step);
+  if (!li.classList.contains("klickbar")) return;
+  if (n === 3 && W.abgleich) renderChecklist();
+  wizZeige(n);
 }
 function renderWizardStart() {
   const d = S.daten, el = $("wiz-letzter");
@@ -514,7 +526,7 @@ async function wizKontrolle() {
     $("wiz-btn-kontrolle3").addEventListener("click", wizKontrolle);
   }
 }
-function wizNeu() { W.checks = {}; W.abgleich = null; W.runId = null; W.ack = false; W.dateiName = ""; wizSpeichern(); $("wiz-2-plausi").innerHTML = ""; $("dropzone").innerHTML = `${ic("upload")}<br>Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken`; wizZeige(0); }
+function wizNeu() { W.maxStep = 0; W.checks = {}; W.abgleich = null; W.runId = null; W.ack = false; W.dateiName = ""; wizSpeichern(); $("wiz-2-plausi").innerHTML = ""; $("dropzone").innerHTML = `${ic("upload")}<br>Excel-Export aus Fairgate <b>hierher ziehen</b> oder klicken`; wizZeige(0); }
 
 // ------------------------------------------------------------------ Regeln / Verlauf ----
 function befuelleRegeln() {
@@ -597,6 +609,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("wiz-btn-kontrolle").addEventListener("click", wizKontrolle);
   $("wiz-btn-neu").addEventListener("click", wizNeu);
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => wizZeige(Number(b.dataset.goto))));
+  $("wiz-steps").addEventListener("click", (e) => { const li = e.target.closest("li[data-step]"); if (li) wizTabKlick(li); });
+  $("wiz-steps").addEventListener("keydown", (e) => { const li = e.target.closest("li[data-step]"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); wizTabKlick(li); } });
   // Abhaken ohne Neuaufbau der Liste (kein Scroll-Sprung, Fokus bleibt): nur Zähler/Fortschritt nachführen.
   $("wiz-3-liste").addEventListener("change", (e) => {
     const cb = e.target.closest("input[data-key]"); if (!cb) return;
@@ -635,6 +649,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       $("dropzone").innerHTML = ic("check") + `<br><b>${esc(W.dateiName || "Fairgate-Export")}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
       renderPlausi(wieder);
       if (gespeichert.step >= 3) renderChecklist();
+      W.maxStep = gespeichert.step;
       wizZeige(gespeichert.step);
       toast(`Abgleich fortgesetzt bei Schritt ${gespeichert.step}.`);
     } else if (gespeichert.step >= 3 && gespeichert.dateiName) {
