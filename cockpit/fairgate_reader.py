@@ -5,8 +5,9 @@ import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
 PFLICHT = ["Kontakt-ID Verein", "Vorname", "Nachname", "Mitgliedschaft"]
-EXPORTWEG = ("Fairgate: Kontaktverwaltung → Aktive Kontakte → Exportieren, Haken bei "
-             "«für Aktualisierungsimport optimieren» (bringt die Kontakt-ID mit).")
+EXPORTWEG = ("Fairgate: Kontaktverwaltung → Aktive Kontakte → Aktionsmenü → Exportieren (Excel). "
+             "Der Export muss die Spalten «Kontakt-ID Verein», «Vorname», «Nachname» und "
+             "«Mitgliedschaft» enthalten — kein spezieller Haken nötig.")
 
 
 class FalscheDatei(Exception):

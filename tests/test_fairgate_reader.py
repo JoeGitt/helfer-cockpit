@@ -32,7 +32,7 @@ def test_weist_falsche_datei_ab(tmp_path):
     pfad = _schreibe(tmp_path, ["Vorname Helfer/in", "Nachname Helfer/in"], [["A", "B"]])
     with pytest.raises(FalscheDatei) as e:
         lies_fairgate(pfad)
-    assert "Aktualisierungsimport" in str(e.value)
+    assert "Kontakt-ID Verein" in str(e.value)
 
 def test_leere_zeilen_werden_uebersprungen(tmp_path):
     pfad = _schreibe(tmp_path, KOPF, [[None] * 10])
@@ -44,7 +44,7 @@ def test_garbage_datei_wird_als_falsche_datei_abgewiesen(tmp_path):
     pfad.write_bytes(b"das ist keine Excel-Datei, nur Muell-Bytes \x00\x01\x02")
     with pytest.raises(FalscheDatei) as e:
         lies_fairgate(pfad)
-    assert "Aktualisierungsimport" in str(e.value)
+    assert "Kontakt-ID Verein" in str(e.value)
 
 
 def test_liest_kontakte_aus_bytesio(tmp_path):
