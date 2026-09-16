@@ -435,3 +435,103 @@ def test_fairgate_liefert_import_vorschau(server):
     with urllib.request.urlopen(server + "/ausgabe/" + d["dateien"]["begruendung"].split("/")[-1]) as r:
         html = r.read().decode()
     assert "Neu Kind" in html and "Zeile" in html and "nicht ins Portal importiert" in html
+
+
+# ---- Vorfragen (möglicher Zweitaccount) vor der Import-Datei beantworten ----------------
+
+def _acc_json(id, vn, nn, mail, fg, gruppen=("Mitglied",), ziel=2):
+    return {"id": id, "firstName": vn, "lastName": nn, "email": mail, "adminRemarks": fg or "",
+            "groups": [{"id": i, "name": g} for i, g in enumerate(gruppen)],
+            "stateCache": {"requestedValue": ziel, "plannedValue": 0}}
+
+def _server_mit(tmp_path, helpers):
+    z = _zustand(tmp_path)
+    z.helpers = helpers
+    z.assignments = []
+    srv = starte_server(z, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+def _post_json(url, daten):
+    req = urllib.request.Request(url, data=json.dumps(daten).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+def test_vorfragen_endpoint_erzeugt_import_erst_nach_antwort(tmp_path):
+    helpers = [_acc_json(1, "Lina", "Brunner", "lina@example.ch", "FG-1"),
+               _acc_json(2, "Reto", "Brunner", "reto@example.ch", None),
+               _acc_json(3, "Noah", "Keller", "noah@example.ch", "FG-2")]
+    fairgate = _fairgate_xlsx_bytes([
+        ["x", 1, "lina@example.ch", "Lina", "Brunner", "079 1", "Aktivmitglied", None, None, "2000-01-01"],
+        ["x", 2, "noah@example.ch", "Noah", "Keller", "", "Aktivmitglied", None, None, "2000-01-01"]])
+    srv, url = _server_mit(tmp_path, helpers)
+    try:
+        # ohne Fairgate: 400
+        try:
+            _post_json(url + "/api/abgleich/entscheide", {"entscheide": {}})
+            assert False
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+        req = urllib.request.Request(url + "/api/fairgate", data=fairgate, method="POST")
+        with urllib.request.urlopen(req) as r:
+            d = json.loads(r.read())
+        assert len(d["vorfragen"]) == 1
+        v = d["vorfragen"][0]
+        assert v["helper_id"] == 2 and v["portal_url"].endswith("/detail/2")
+        assert v["kandidaten"][0]["fg"] == "FG-1" and v["kandidaten"][0]["telefon"] == "079 1"
+        assert v["kandidaten"][0]["portal_url"].endswith("/detail/1")
+        assert not any(z["name"] == "Reto Brunner" for z in d["import_vorschau"])
+        # Antwort Zweitaccount → Import-Zeile mit FG, Datei neu geschrieben
+        d = _post_json(url + "/api/abgleich/entscheide", {"entscheide": {"2": {"antwort": "zweitaccount", "fg": "FG-1", "name": "Reto Brunner"}}})
+        assert d["vorfragen"] == []
+        z = next(z for z in d["import_vorschau"] if z["name"] == "Reto Brunner")
+        assert "Bemerkung FG-1" in z["aenderungen"] and z["kategorie"] == "Zweitaccount"
+        assert d["entscheide"]["2"]["antwort"] == "zweitaccount" and d["entscheide"]["2"]["gespeichert"] is False
+        wb = openpyxl.load_workbook(d["dateien"]["import"])
+        zeilen = list(wb.active.iter_rows(values_only=True))
+        assert any(r[0] == "Reto" and r[10] == "FG-1" for r in zeilen)
+        # Antwort ändern auf «andere» → dauerhaft gespeichert
+        d = _post_json(url + "/api/abgleich/entscheide", {"entscheide": {"2": {"antwort": "andere", "name": "Reto Brunner"}}})
+        z = next(z for z in d["import_vorschau"] if z["name"] == "Reto Brunner")
+        assert "Bemerkung" not in z["aenderungen"] and d["entscheide"]["2"]["gespeichert"] is True
+        gespeichert = json.loads((tmp_path / "Ausgabe" / "entscheide.json").read_text())
+        assert gespeichert["2"]["antwort"] == "andere" and gespeichert["2"]["name"] == "Reto Brunner"
+        # Kontrolle kennt die Antwort ebenfalls (keine Vorfrage offen)
+        req = urllib.request.Request(url + "/api/abgleich/kontrolle", data=b"{}", method="POST")
+        with urllib.request.urlopen(req) as r:
+            k = json.loads(r.read())
+        assert k["offen"]["vorfragen"] == 0
+    finally:
+        srv.shutdown()
+    # neue Sitzung, gleicher Ausgabe-Ordner: die Antwort «andere» gilt weiter, kein erneutes Fragen
+    srv, url = _server_mit(tmp_path, helpers)
+    try:
+        req = urllib.request.Request(url + "/api/fairgate", data=fairgate, method="POST")
+        with urllib.request.urlopen(req) as r:
+            d = json.loads(r.read())
+        assert d["vorfragen"] == [] and any(z["name"] == "Reto Brunner" for z in d["import_vorschau"])
+        # zurücksetzen → Vorfrage kommt wieder
+        d = _post_json(url + "/api/abgleich/entscheide", {"zuruecksetzen": True})
+        assert len(d["vorfragen"]) == 1 and d["entscheide"] == {}
+        # Antwort löschen (None) geht auch
+        d = _post_json(url + "/api/abgleich/entscheide", {"entscheide": {"2": {"antwort": "unklar"}}})
+        assert d["vorfragen"] == [] and len(d["klaerliste"]) == 1
+        d = _post_json(url + "/api/abgleich/entscheide", {"entscheide": {"2": None}})
+        assert len(d["vorfragen"]) == 1
+    finally:
+        srv.shutdown()
+
+def test_entscheide_ungueltige_antwort_400(tmp_path):
+    srv, url = _server_mit(tmp_path, [_acc_json(1, "Lina", "Brunner", "lina@example.ch", "FG-1")])
+    try:
+        req = urllib.request.Request(url + "/api/fairgate", method="POST", data=_fairgate_xlsx_bytes([
+            ["x", 1, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"]]))
+        urllib.request.urlopen(req).read()
+        try:
+            _post_json(url + "/api/abgleich/entscheide", {"entscheide": {"1": {"antwort": "vielleicht"}}})
+            assert False
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    finally:
+        srv.shutdown()

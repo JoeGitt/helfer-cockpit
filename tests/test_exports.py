@@ -143,6 +143,7 @@ def test_import_begruendung_html_und_kategorien():
     assert [x["kategorie"] for x in z] == ["Neueintritt", "Kein Mitglied in Fairgate → Freiwillige", "Mitglied aktualisieren"]
     assert z[0]["aenderungen"].startswith("E-Mail n@example.ch") and "Bemerkung FG-9" in z[0]["aenderungen"]
     assert grund_kategorie("Zweitaccount von FG-3 («X», gleiche E-Mail): …") == "Zweitaccount"
+    assert grund_kategorie("Kein Mitglied in Fairgate (…): Freiwillige(r), Zielwert 0 — andere Person als das namensgleiche Mitglied (deine Antwort)") == "Kein Mitglied in Fairgate → Freiwillige"
     html = import_begruendung_html(e, "import-2026-09-10.xlsx")
     assert "import-2026-09-10.xlsx" in html and "Karl Ohne" in html and "<td class='n'>3</td>" in html
     assert "Kein Mitglied in Fairgate → Freiwillige: 1" in html

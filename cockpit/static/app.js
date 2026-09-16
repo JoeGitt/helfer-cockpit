@@ -411,7 +411,67 @@ async function wizStart() {
 }
 function pruefeSchritt1() {
   const unbekannt = W.abgleich && Object.keys((W.abgleich.kategorien || {}).unbekannt || {}).length;
-  $("wiz-btn-2").disabled = !(W.portalOk && W.abgleich && (!unbekannt || W.ack));
+  const offen = W.abgleich && (W.abgleich.vorfragen || []).length;
+  $("wiz-btn-2").disabled = !(W.portalOk && W.abgleich && (!unbekannt || W.ack) && !offen);
+}
+// ---- Vorfragen: mögliche Zweitaccounts, die VOR der Import-Datei beantwortet werden müssen ----
+const ANTWORT_LABEL = { zweitaccount: "Zweitaccount", andere: "Andere Person", unklar: "Noch offen — wird Klärfall" };
+function renderVorfragen(d) {
+  const el = $("wiz-1-vorfragen"); if (!el) return;
+  const vf = d.vorfragen || [], ent = d.entscheide || {};
+  const beantwortet = Object.entries(ent).filter(([, e]) => e && e.antwort);
+  if (!vf.length && !beantwortet.length) { el.innerHTML = ""; return; }
+  let html = "";
+  if (vf.length) {
+    html += `<div class="vf-box"><h3>${ic("alert", "sm")}Vorfragen, bevor die Import-Datei entsteht <span class="cnt">${vf.length}</span></h3>
+      <p class="hint">Diese Accounts haben keine FG-Nummer und stehen nicht in Fairgate — aber ein Mitglied hat denselben Nachnamen. Ist es ein Elternteil (Zweitaccount), schreibt der Import die FG-Nummer gleich mit, und die Einsätze zählen dem Kind. Ohne Antwort kommt der Account nicht in die Import-Datei.</p>
+      <ul class="vf">${vf.map((v) => {
+        const id = v.helper_id, k = v.kandidaten || [];
+        const wahl = k.length > 1
+          ? `<select data-vf-fg="${id}" aria-label="Welches Kind">${k.map((x) => `<option value="${esc(x.fg)}">${esc(x.name)} (${esc(x.fg)})</option>`).join("")}</select>`
+          : `<b>${esc(k[0] ? k[0].name : "")}</b> (${esc(k[0] ? k[0].fg : "")})`;
+        return `<li data-vf="${id}">
+          <div class="kopf"><b>${esc(v.name)}</b><span class="sub">${esc(v.email)}</span><span class="sub">${esc(v.einsatz_text)} · Zielwert ${esc(v.zielwert)} · Gruppen: ${esc((v.gruppen || []).join(", ") || "—")}</span>${plink(v.portal_url, "Account im Portal")}</div>
+          <div class="kand">${k.length > 1 ? "Mitglieder mit gleichem Nachnamen in Fairgate:" : "Mitglied mit gleichem Nachnamen in Fairgate:"}${k.map((x) => `<div>· <b>${esc(x.name)}</b> (${esc(x.fg)})${x.telefon ? ` · Telefon ${esc(x.telefon)}` : ""}${x.portal_account ? ` · Portal-Account ${esc(x.portal_account)}` : ""} ${plink(x.portal_url, "Im Portal")}</div>`).join("")}${v.bemerkung ? `<div>Bemerkung im Portal: «${esc(v.bemerkung)}» — die FG-Nummer müsste dann von Hand dazu</div>` : ""}</div>
+          <div class="antw">
+            <label><input type="radio" name="vf-${id}" value="zweitaccount">Zweitaccount von ${wahl}</label>
+            <label><input type="radio" name="vf-${id}" value="andere">Andere Person, nur Namensgleichheit</label>
+            <label><input type="radio" name="vf-${id}" value="unklar">Weiss nicht — später klären</label>
+          </div></li>`; }).join("")}</ul>
+      <div class="vf-foot"><span class="sub" id="vf-stand">0 von ${vf.length} beantwortet</span><button class="btn primary" id="vf-btn" disabled>${ic("check")}Antworten übernehmen</button></div>
+      <p class="hint" style="margin:8px 0 0">«Andere Person» merkt sich das Cockpit dauerhaft — die Frage kommt nicht wieder. «Zweitaccount» erledigt sich mit dem Import von selbst.</p></div>`;
+  }
+  if (beantwortet.length) {
+    html += `<details class="vf-done"><summary>${beantwortet.length} Vorfragen beantwortet — ändern</summary><ul>${beantwortet.map(([id, e]) => `<li><b>${esc(e.name || `Account ${id}`)}</b><span class="sub">${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.fg ? ` von ${esc(e.fg)}` : ""}${e.gespeichert ? " · dauerhaft gespeichert" : ""}${e.zeit ? ` · ${esc(e.zeit)}` : ""}</span><button class="btn" data-vf-reset="${esc(id)}">Nochmals fragen</button></li>`).join("")}</ul></details>`;
+  }
+  el.innerHTML = html;
+  const stand = () => {
+    const n = vf.filter((v) => el.querySelector(`input[name="vf-${v.helper_id}"]:checked`)).length;
+    if ($("vf-stand")) $("vf-stand").textContent = `${n} von ${vf.length} beantwortet${n < vf.length ? " — unbeantwortete bleiben vorerst draussen" : ""}`;
+    if ($("vf-btn")) $("vf-btn").disabled = n === 0;
+  };
+  el.querySelectorAll("input[type=radio]").forEach((r) => r.addEventListener("change", stand));
+  if ($("vf-btn")) $("vf-btn").addEventListener("click", () => {
+    const entscheide = {};
+    vf.forEach((v) => {
+      const r = el.querySelector(`input[name="vf-${v.helper_id}"]:checked`); if (!r) return;
+      const sel = el.querySelector(`select[data-vf-fg="${v.helper_id}"]`);
+      entscheide[v.helper_id] = { antwort: r.value, fg: r.value === "zweitaccount" ? (sel ? sel.value : v.kandidaten[0].fg) : "", name: v.name };
+    });
+    sendeEntscheide({ entscheide });
+  });
+  el.querySelectorAll("[data-vf-reset]").forEach((b) => b.addEventListener("click", () => sendeEntscheide({ entscheide: { [b.dataset.vfReset]: null } })));
+}
+async function sendeEntscheide(body) {
+  const btn = $("vf-btn"); if (btn) { btn.disabled = true; btn.innerHTML = ic("refresh", "spin") + "Import-Datei wird neu erzeugt …"; }
+  try {
+    const d = await holeJson("/api/abgleich/entscheide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    W.abgleich = d; W.runId = wizRunId(d); wizSpeichern();
+    renderPlausi(d);
+    const n = Object.values(body.entscheide || {}).filter(Boolean).length;
+    toast(n ? `${n} Antworten übernommen — Import-Datei neu erzeugt.` : "Vorfrage wieder offen.");
+    ladeProtokoll();
+  } catch (e) { zeigeFehler("fairgate", e.message); renderPlausi(W.abgleich); }
 }
 async function fairgateHochladen(datei) {
   if (!datei) return;
@@ -444,6 +504,7 @@ function renderPlausi(d) {
   let html = `<div class="plausi">${teile.join("")}</div>`;
   if (unbekannt.length) html += `<label class="ack"><input type="checkbox" id="wiz-ack" ${W.ack ? "checked" : ""}><span>Diese Kategorien stehen in keiner Regel und werden <b>nicht abgeglichen</b>. Wenn das Mitglieder sind, zuerst unter Einstellungen → Regeln ergänzen und den Export nochmals laden. Sonst hier bestätigen, dass das so gewollt ist.</span></label>`;
   $("wiz-2-plausi").innerHTML = html;
+  renderVorfragen(d);
   const pruefe = () => { W.ack = !unbekannt.length || ($("wiz-ack") && $("wiz-ack").checked); wizSpeichern(); pruefeSchritt1(); };
   if ($("wiz-ack")) $("wiz-ack").addEventListener("change", pruefe);
   pruefe();
@@ -656,7 +717,8 @@ function beschreibe(e) {
   const dateien = (e.dateien || []).map((f) => `<a href="${ausgabeLink(f)}" target="_blank" rel="noopener">${esc(f)}</a>`).join(", ");
   switch (e.aktion) {
     case "api-abruf": return { a: "Portal-Abruf", d: `${e.accounts} Accounts${e.hinweise != null ? ` · ${e.hinweise} Hinweise` : ""}` };
-    case "abgleich": return { a: "Quartals-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${e.abweichungen != null ? ` · ${e.abweichungen} Info` : ""}${dateien ? " · " + dateien : ""}` };
+    case "abgleich": return { a: "Quartals-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${e.vorfragen ? ` · ${e.vorfragen} Vorfragen` : ""}${e.abweichungen != null ? ` · ${e.abweichungen} Info` : ""}${dateien ? " · " + dateien : ""}` };
+    case "entscheide": return { a: "Vorfragen beantwortet", d: `${e.beantwortet} Antworten${e.geloescht ? ` · ${e.geloescht} wieder offen` : ""} · Import-Datei neu erzeugt` };
     case "kontrolle": return { a: e.synchron ? "Kontrolle: alles synchron ✓" : "Kontrolle: noch offen", d: `${e.handarbeit} Handarbeit · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.klaerliste} Klärfälle` };
     case "saeumigen-csv": return { a: "Säumigen-CSV", d: `${e.anzahl} Einträge (${e.sicht === "halbjahr" ? "Halbjahresziel" : "Saison-Soll"})${dateien ? " · " + dateien : ""}` };
     case "gesamtexport": return { a: "Excel-Gesamtexport", d: `${e.anzahl} Mitglieder${dateien ? " · " + dateien : ""}` };

@@ -51,7 +51,8 @@ class AbgleichErgebnis:
     duplikat_warnungen: list = field(default_factory=list)
     unbekannte_kategorien: list = field(default_factory=list)
     kontakt_abweichungen: list = field(default_factory=list)
-    hinweise: list = field(default_factory=list)          # Info, keine Handarbeit (z. B. möglicher Zweitaccount)
+    hinweise: list = field(default_factory=list)          # Info, keine Handarbeit
+    vorfragen: list = field(default_factory=list)         # müssen VOR der Import-Datei beantwortet werden
     kategorien: dict = field(default_factory=dict)
     zusammenfassung: str = ""
     geprueft: int = 0
@@ -117,8 +118,11 @@ ENTSCHEIDUNGSHILFE = ("Entscheidungshilfe: Steht in der E-Mail des Accounts ohne
 
 # ------------------------------------------------------------------ Abgleich ----
 
-def gleiche_ab(kontakte, accounts, regeln, heute=None):
+def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
+    """entscheide: Antworten auf Vorfragen, {str(helper_id): {"antwort": "zweitaccount"|"andere"|"unklar",
+    "fg": "FG-…"}}. Ohne Antwort erzeugt ein möglicher Zweitaccount keine Import-Zeile, sondern eine Vorfrage."""
     heute = heute or datetime.date.today()
+    entscheide = entscheide or {}
     e = AbgleichErgebnis(geprueft=len(kontakte))
     portal_mitglieder = [a for a in accounts if a.typ == Typ.MITGLIED]
 
@@ -355,26 +359,52 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
                               zielwert="0" if a.zielwert != 0 else "",
                               gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_UNBEKANNTE, GRUPPE_MITGLIED)))
             elif hat_mitglied or a.zielwert != 0 or a.typ == Typ.UNKLASSIFIZIERT:
-                # Fall B: sieht aus wie ein Mitglied, ist aber in Fairgate nirgends zu finden
-                korrektur(a, "Kein Mitglied in Fairgate (weder FG, E-Mail noch Name): Freiwillige(r), Zielwert 0",
-                          zielwert="0" if a.zielwert != 0 else "",
-                          gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE)))
-                familie = nachname_fgs.get(a.nachname.strip().lower(), set()) & fg_mit_mitgliedsaccount
-                if familie:
-                    mitglieder = [f"«{pflichtig[f].vorname} {pflichtig[f].nachname}» ({f})" for f in sorted(familie)]
-                    n = _einsaetze(a)
-                    e.hinweise.append({
-                        "titel": f"{a.anzeigename}: gleicher Nachname wie Mitglied {', '.join(sorted(familie))} — Elternteil?",
-                        "fakten": [f"Portal-Account «{a.anzeigename}» ({a.email}) · {_einsatz_text(a)}",
-                                   f"Gleicher Nachname in Fairgate: {', '.join(mitglieder)}",
-                                   "Der Import macht daraus Freiwillige(r) mit Zielwert 0 — das stimmt in beiden Fällen"],
-                        "optionen": [("Elternteil oder Zweitaccount → im Portal in die Bemerkung «" + sorted(familie)[0]
-                                      + "» eintragen (vor oder nach dem Import); ab dann zählen die Einsätze dem Mitglied"
-                                      if len(familie) == 1 else
-                                      "Elternteil oder Zweitaccount → im Portal in die Bemerkung die FG-Nummer des Kinds eintragen "
-                                      f"({' oder '.join(mitglieder)}); bei Geschwistern eine wählen — die Einsätze zählen dann diesem Kind"),
-                                     "Andere Person → nichts tun"],
-                        "wo": "Portal", "helper_id": a.id, "fg": sorted(familie)[0], "einsaetze": n})
+                # Fall B: sieht aus wie ein Mitglied, ist aber in Fairgate nirgends zu finden.
+                # Gleicher Nachname wie ein Mitglied → erst fragen (Zweitaccount?), dann importieren.
+                familie = sorted(nachname_fgs.get(a.nachname.strip().lower(), set()) & fg_mit_mitgliedsaccount)
+                ent = entscheide.get(str(a.id)) or {}
+                antwort = ent.get("antwort") if familie else "andere"
+                if antwort == "zweitaccount" and ent.get("fg") in familie:
+                    fg0 = ent["fg"]
+                    kind = pflichtig[fg0]
+                    if a.bemerkung:
+                        klaer(f"{a.anzeigename}: Zweitaccount von {fg0} — Bemerkung ist belegt",
+                              [f"Du hast «{a.anzeigename}» als Zweitaccount von «{kind.vorname} {kind.nachname}» ({fg0}) bestimmt",
+                               f"Die Bemerkung im Portal enthält schon: «{a.bemerkung}» — der Import überschreibt sie nicht"],
+                              [f"Im Portal bei «{a.anzeigename}» die Bemerkung um «{fg0}» ergänzen; Zielwert 0 und Gruppe "
+                               "«Freiwillige» setzt der Import jetzt schon"],
+                              helper_id=a.id, fg=fg0)
+                        korrektur(a, f"Zweitaccount von {fg0} (deine Antwort): Zielwert 0, Gruppe «Freiwillige» — FG-Nummer von Hand, Bemerkung belegt",
+                                  zielwert="0" if a.zielwert != 0 else "",
+                                  gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE)))
+                    else:
+                        e.korrekturen.append(ImportZeile(
+                            vorname=a.vorname, nachname=a.nachname, email=a.email,
+                            bemerkungen=fg0, zielwert="0" if a.zielwert != 0 else "",
+                            gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE)),
+                            grund=f"Zweitaccount von {fg0} («{kind.vorname} {kind.nachname}», deine Antwort): FG-Nummer eintragen, Zielwert 0, Gruppe «Freiwillige»"))
+                elif antwort == "andere":
+                    korrektur(a, "Kein Mitglied in Fairgate (weder FG, E-Mail noch Name): Freiwillige(r), Zielwert 0"
+                              + (" — andere Person als das namensgleiche Mitglied (deine Antwort)" if familie else ""),
+                              zielwert="0" if a.zielwert != 0 else "",
+                              gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE)))
+                elif antwort == "unklar":
+                    mitglieder = [f"«{pflichtig[f].vorname} {pflichtig[f].nachname}» ({f})"
+                                  + (f", Telefon {pflichtig[f].telefon}" if pflichtig[f].telefon else "") for f in familie]
+                    klaer(f"{a.anzeigename}: Zweitaccount eines Mitglieds {', '.join(familie)}? Noch offen",
+                          [f"Portal-Account «{a.anzeigename}» ({a.email}) · {_einsatz_text(a)} · noch nicht in der Import-Datei",
+                           f"Gleicher Nachname in Fairgate: {'; '.join(mitglieder)}"],
+                          ["Nachfragen (Telefon oben oder E-Mail an den Account) → beim nächsten Abgleich die Vorfrage beantworten; "
+                           "die Import-Zeile entsteht dann automatisch"],
+                          helper_id=a.id, fg=familie[0])
+                else:
+                    e.vorfragen.append({
+                        "helper_id": a.id, "name": a.anzeigename, "email": a.email, "gruppen": list(a.gruppen),
+                        "zielwert": a.zielwert, "einsaetze": _einsaetze(a), "einsatz_text": _einsatz_text(a),
+                        "bemerkung": a.bemerkung,
+                        "kandidaten": [{"fg": f, "name": f"{pflichtig[f].vorname} {pflichtig[f].nachname}",
+                                        "telefon": pflichtig[f].telefon,
+                                        "portal_account": portal_nach_fg[f].email} for f in familie]})
             # sonst: echte(r) Freiwillige(r) — nichts zu tun
 
     # ---- Phase 2: Fairgate-Kontakte ohne Portal-Account → Neueintritte ------------------
@@ -412,8 +442,8 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None):
             f"Unbekannte Fairgate-Kategorie ‹{kategorie}› bei {n} Kontakten — Regeln prüfen, "
             "diese Kontakte wurden NICHT abgeglichen.")
 
-    # Hinweise mit Einsätzen zuerst — nur dort geht dem Mitglied etwas verloren
-    e.hinweise.sort(key=lambda h: -(h.get("einsaetze", 0) if isinstance(h, dict) else 0))
+    # Vorfragen mit Einsätzen zuerst — dort steht am meisten auf dem Spiel
+    e.vorfragen.sort(key=lambda v: (-v["einsaetze"], v["name"]))
 
     teile = []
     if e.neueintritte: teile.append(f"{len(e.neueintritte)} Neueintritte")

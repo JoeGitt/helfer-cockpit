@@ -358,6 +358,19 @@
   .done-card .big .ic{width:28px; height:28px; stroke-width:2.2}
   .done-card h2{font-size:20px}
   .done-card p{color:var(--muted); margin:6px 0 0}
+  .vf-box{margin-top:16px; border:1px solid var(--warn); border-radius:var(--r); background:var(--surface); padding:14px 16px}
+  .vf-box h3{margin:0 0 4px; font-size:14.5px; display:flex; align-items:center; gap:8px} .vf-box h3 .cnt{font-size:11.5px; background:var(--warn-soft); color:var(--warn); border-radius:99px; padding:1px 8px}
+  .vf-box .hint{margin:0 0 10px}
+  .vf{list-style:none; margin:0; padding:0; display:grid; gap:10px}
+  .vf>li{border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--surface2)}
+  .vf .kopf{display:flex; flex-wrap:wrap; gap:6px 14px; align-items:baseline} .vf .kopf b{font-size:14px} .vf .kopf .sub{font-size:12px}
+  .vf .kand{margin:6px 0 8px; font-size:12.5px; color:var(--ink2)} .vf .kand b{color:var(--ink)}
+  .vf .antw{display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px} .vf .antw label{display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:4px 8px; border-radius:8px; border:1px solid transparent}
+  .vf .antw label:has(input:checked){border-color:var(--border-strong); background:var(--surface)}
+  .vf .antw select{font:12.5px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:6px; padding:2px 6px}
+  .vf-foot{display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap} .vf-foot .sub{flex:1}
+  .vf-done{margin-top:10px} .vf-done summary{cursor:pointer; font-size:12.5px; color:var(--muted); font-weight:600}
+  .vf-done ul{list-style:none; margin:6px 0 0; padding:0; font-size:12.5px} .vf-done li{display:flex; gap:10px; align-items:center; padding:4px 0; border-bottom:1px solid var(--border)} .vf-done li:last-child{border-bottom:none} .vf-done li .sub{flex:1}
   .begr{margin-top:14px; border-top:1px solid var(--border); padding-top:12px}
   .begr-head{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:8px}
   .begr-head>div:first-child{flex:1; min-width:240px} .begr-head b{display:block; font-size:13.5px} .begr-head .sub{display:block; margin-top:2px}
@@ -622,6 +635,7 @@
         </div>
         <input type="file" id="datei-input" accept=".xlsx" hidden>
         <div id="wiz-2-plausi"></div>
+        <div id="wiz-1-vorfragen"></div>
         <div class="wiz-actions"><span class="spacer"></span><button class="btn primary" id="wiz-btn-2" disabled>Weiter zum Abarbeiten<svg class="ic"><use href="#i-chev"/></svg></button></div>
       </div>
 

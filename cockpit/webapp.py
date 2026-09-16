@@ -38,6 +38,44 @@ class Zustand:
     fairgate_kontakte: list = None     # Kontakte des letzten Exports (nur im Speicher, für die Kontrolle)
     letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
     letztes_ergebnis: dict = None      # vollständige Antwort des letzten Abgleichs (für Seiten-Neuladen)
+    entscheide: dict = None            # Antworten auf Vorfragen dieser Sitzung {helper_id: {antwort, fg}}
+
+    def entscheide_pfad(self):
+        return self.ausgabe_dir / "entscheide.json"
+
+    def lade_entscheide(self):
+        """Dauerhaft gespeicherte Antworten («Andere Person») plus die dieser Sitzung."""
+        gespeichert = {}
+        try:
+            if self.entscheide_pfad().exists():
+                gespeichert = json.loads(self.entscheide_pfad().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            gespeichert = {}
+        if not isinstance(gespeichert, dict):
+            gespeichert = {}
+        return {**gespeichert, **(self.entscheide or {})}, gespeichert
+
+    def speichere_entscheide(self, neue):
+        """neue: {helper_id: {antwort, fg, name} | None}. «andere» wird dauerhaft gespeichert,
+        «zweitaccount»/«unklar» nur für die Sitzung (lösen sich selbst bzw. sollen wieder gefragt werden),
+        None löscht die Antwort."""
+        _, gespeichert = self.lade_entscheide()
+        self.entscheide = dict(self.entscheide or {})
+        for hid, ent in neue.items():
+            hid = str(hid)
+            gespeichert.pop(hid, None); self.entscheide.pop(hid, None)
+            if not ent:
+                continue
+            eintrag = {"antwort": ent.get("antwort"), "fg": ent.get("fg") or "", "name": ent.get("name") or "",
+                       "zeit": datetime.date.today().isoformat()}
+            if eintrag["antwort"] == "andere":
+                gespeichert[hid] = eintrag
+            elif eintrag["antwort"] in ("zweitaccount", "unklar"):
+                self.entscheide[hid] = eintrag
+        self.ausgabe_dir.mkdir(parents=True, exist_ok=True)
+        tmp = self.entscheide_pfad().with_suffix(".tmp")
+        tmp.write_text(json.dumps(gespeichert, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(self.entscheide_pfad())
 
 
 def portal_url(z, helper_id):
@@ -73,8 +111,71 @@ def _abgleich_json(z, ergebnis):
         "hinweise": [({**h, "portal_url": portal_url(z, h["helper_id"]) if h.get("helper_id") else None}
                       if isinstance(h, dict) else {"titel": str(h), "fakten": [], "optionen": [], "portal_url": None})
                      for h in ergebnis.hinweise],
+        "vorfragen": [{**v, "portal_url": portal_url(z, v["helper_id"]),
+                       "kandidaten": [{**k, "portal_url": portal_url(z, _helper_id_zu_fg(z, k["fg"]))} for k in v["kandidaten"]]}
+                      for v in ergebnis.vorfragen],
+        "entscheide": _entscheide_json(z),
         "import_vorschau": _import_vorschau(ergebnis),
     }
+
+
+def _helper_id_zu_fg(z, fg):
+    for h in z.helpers or []:
+        a = classify(h)
+        if a.fg == fg and a.typ == Typ.MITGLIED:
+            return a.id
+    return None
+
+
+def _entscheide_json(z):
+    """Alle wirksamen Antworten (Sitzung + gespeichert), damit die Oberfläche sie zeigen und ändern kann."""
+    alle, gespeichert = z.lade_entscheide()
+    return {hid: {**e, "gespeichert": hid in gespeichert} for hid, e in alle.items()}
+
+
+def abgleich_ausfuehren(zustand, kontakte, protokollieren=True):
+    """Abgleich rechnen, Ausgabedateien schreiben, Antwort merken. Gemeinsam für Fairgate-Upload
+    und Vorfragen-Antworten (die Import-Datei wird mit den Antworten neu erzeugt)."""
+    regeln = lade_regeln(zustand.regeln_pfad)
+    accounts = [classify(h) for h in (zustand.helpers or [])]
+    entscheide, _ = zustand.lade_entscheide()
+    ergebnis = gleiche_ab(kontakte, accounts, regeln, entscheide=entscheide)
+    zustand.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
+    zustand.fairgate_kontakte = kontakte
+    zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
+    heute = datetime.date.today().isoformat()
+    import_pfad = zustand.ausgabe_dir / f"import-{heute}.xlsx"
+    schreibe_import_xlsx(ergebnis.neueintritte + ergebnis.korrekturen, import_pfad)
+    liste_pfad = zustand.ausgabe_dir / f"handarbeitsliste-{heute}.html"
+    liste_pfad.write_text(handarbeitsliste_html(ergebnis), encoding="utf-8")
+    kontakte_pfad = zustand.ausgabe_dir / f"kontaktdaten-abweichungen-{heute}.csv"
+    schreibe_kontaktabweichungen_csv(ergebnis.kontakt_abweichungen, kontakte_pfad)
+    begruendung_pfad = zustand.ausgabe_dir / f"import-{heute}-begruendung.html"
+    begruendung_pfad.write_text(import_begruendung_html(ergebnis, import_pfad.name), encoding="utf-8")
+    dateien = [import_pfad.name, liste_pfad.name, kontakte_pfad.name, begruendung_pfad.name]
+    if protokollieren:
+        protokoll.logge(zustand.protokoll_pfad, "abgleich", {
+            "geprueft": ergebnis.geprueft,
+            "neueintritte": len(ergebnis.neueintritte),
+            "korrekturen": len(ergebnis.korrekturen),
+            "handarbeit": len(ergebnis.handarbeit),
+            "vorfragen": len(ergebnis.vorfragen),
+            "abweichungen": len(ergebnis.kontakt_abweichungen),
+            "dateien": dateien})
+    antwort = _abgleich_json(zustand, ergebnis)
+    antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
+                          "kontakte": str(kontakte_pfad), "begruendung": str(begruendung_pfad)}
+    zustand.letztes_ergebnis = antwort
+    zustand.letzter_abgleich = {
+        "zeit": datetime.datetime.now().isoformat(timespec="seconds"),
+        "zusammenfassung": ergebnis.zusammenfassung,
+        "geprueft": ergebnis.geprueft,
+        "neueintritte": len(ergebnis.neueintritte),
+        "korrekturen": len(ergebnis.korrekturen),
+        "handarbeit": len(ergebnis.handarbeit),
+        "klaerliste": len(ergebnis.klaerliste),
+        "dateien": dateien}
+    return antwort
 
 
 def _import_vorschau(ergebnis):
@@ -274,45 +375,30 @@ def starte_server(zustand, port=0):
                 daten = self._body()
                 try:
                     kontakte = lies_fairgate(io.BytesIO(daten))
-                    regeln = lade_regeln(zustand.regeln_pfad)
-                    accounts = [classify(h) for h in (zustand.helpers or [])]
-                    ergebnis = gleiche_ab(kontakte, accounts, regeln)
-                    zustand.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
-                    zustand.fairgate_kontakte = kontakte
-                    zustand.ausgabe_dir.mkdir(parents=True, exist_ok=True)
-                    heute = datetime.date.today().isoformat()
-                    import_pfad = zustand.ausgabe_dir / f"import-{heute}.xlsx"
-                    schreibe_import_xlsx(ergebnis.neueintritte + ergebnis.korrekturen, import_pfad)
-                    liste_pfad = zustand.ausgabe_dir / f"handarbeitsliste-{heute}.html"
-                    liste_pfad.write_text(handarbeitsliste_html(ergebnis), encoding="utf-8")
-                    kontakte_pfad = zustand.ausgabe_dir / f"kontaktdaten-abweichungen-{heute}.csv"
-                    schreibe_kontaktabweichungen_csv(ergebnis.kontakt_abweichungen, kontakte_pfad)
-                    begruendung_pfad = zustand.ausgabe_dir / f"import-{heute}-begruendung.html"
-                    begruendung_pfad.write_text(import_begruendung_html(ergebnis, import_pfad.name),
-                                                encoding="utf-8")
-                    dateien = [import_pfad.name, liste_pfad.name, kontakte_pfad.name, begruendung_pfad.name]
-                    protokoll.logge(zustand.protokoll_pfad, "abgleich", {
-                        "geprueft": ergebnis.geprueft,
-                        "neueintritte": len(ergebnis.neueintritte),
-                        "korrekturen": len(ergebnis.korrekturen),
-                        "handarbeit": len(ergebnis.handarbeit),
-                        "abweichungen": len(ergebnis.kontakt_abweichungen),
-                        "dateien": dateien})
-                    antwort = _abgleich_json(zustand, ergebnis)
-                    antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
-                                          "kontakte": str(kontakte_pfad), "begruendung": str(begruendung_pfad)}
-                    zustand.letztes_ergebnis = antwort
-                    zustand.letzter_abgleich = {
-                        "zeit": datetime.datetime.now().isoformat(timespec="seconds"),
-                        "zusammenfassung": ergebnis.zusammenfassung,
-                        "geprueft": ergebnis.geprueft,
-                        "neueintritte": len(ergebnis.neueintritte),
-                        "korrekturen": len(ergebnis.korrekturen),
-                        "handarbeit": len(ergebnis.handarbeit),
-                        "klaerliste": len(ergebnis.klaerliste),
-                        "dateien": dateien}
-                    return self._json(antwort)
+                    return self._json(abgleich_ausfuehren(zustand, kontakte))
                 except (FalscheDatei, ValueError) as e:
+                    return self._json({"fehler": str(e)}, 400)
+            if u.path == "/api/abgleich/entscheide":
+                # Vorfragen beantworten: Antworten merken und die Import-Datei damit neu erzeugen
+                if not zustand.fairgate_kontakte:
+                    return self._json({"fehler": "Zuerst den Fairgate-Export laden — die Vorfragen gehören zu einem Abgleich."}, 400)
+                try:
+                    daten = json.loads(self._body() or b"{}")
+                    neue = daten.get("entscheide") or {}
+                    if not isinstance(neue, dict):
+                        raise ValueError("entscheide muss ein Objekt sein")
+                    for ent in neue.values():
+                        if ent and ent.get("antwort") not in ("zweitaccount", "andere", "unklar"):
+                            raise ValueError("Unbekannte Antwort")
+                    if daten.get("zuruecksetzen"):
+                        _, gespeichert = zustand.lade_entscheide()
+                        neue = {**{hid: None for hid in gespeichert}, **neue}
+                    zustand.speichere_entscheide(neue)
+                    protokoll.logge(zustand.protokoll_pfad, "entscheide",
+                                    {"beantwortet": sum(1 for v in neue.values() if v),
+                                     "geloescht": sum(1 for v in neue.values() if not v)})
+                    return self._json(abgleich_ausfuehren(zustand, zustand.fairgate_kontakte, protokollieren=False))
+                except ValueError as e:
                     return self._json({"fehler": str(e)}, 400)
             if u.path == "/api/abgleich/kontrolle":
                 # Schritt 4 des geführten Abgleichs: Portal frisch holen und mit denselben
@@ -332,13 +418,15 @@ def starte_server(zustand, port=0):
                 regeln = lade_regeln(zustand.regeln_pfad)
                 accounts = [classify(h) for h in (zustand.helpers or [])]
                 try:
-                    ergebnis = gleiche_ab(zustand.fairgate_kontakte, accounts, regeln)
+                    entscheide, _ = zustand.lade_entscheide()
+                    ergebnis = gleiche_ab(zustand.fairgate_kontakte, accounts, regeln, entscheide=entscheide)
                 except ValueError as e:
                     return self._json({"fehler": str(e)}, 400)
                 offen = {"neueintritte": len(ergebnis.neueintritte),
                          "korrekturen": len(ergebnis.korrekturen),
                          "handarbeit": len(ergebnis.handarbeit),
-                         "klaerliste": len(ergebnis.klaerliste)}
+                         "klaerliste": len(ergebnis.klaerliste),
+                         "vorfragen": len(ergebnis.vorfragen)}
                 synchron = not any(offen.values())
                 protokoll.logge(zustand.protokoll_pfad, "kontrolle", {"synchron": synchron, **offen})
                 antwort = _abgleich_json(zustand, ergebnis)

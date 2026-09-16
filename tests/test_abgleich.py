@@ -306,13 +306,56 @@ def test_fall_b_sieht_wie_mitglied_aus_ohne_fairgate_bezug_wird_freiwillig():
     assert "Kein Mitglied in Fairgate" in z.grund
     assert e.klaerliste == []
 
-def test_fall_b_mit_gleichem_nachnamen_gibt_zweitaccount_hinweis():
+def test_fall_b_mit_gleichem_nachnamen_wird_vorfrage_statt_import():
     a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
     e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")], REGELN, HEUTE)
-    assert any(z.vorname == "Reto" and z.zielwert == "0" for z in e.korrekturen)      # trotzdem automatisch
-    assert e.klaerliste == []                                                        # kein Pflicht-Häkchen
-    assert len(e.hinweise) == 1 and "Reto Brunner" in e.hinweise[0]["titel"] and "FG-1" in e.hinweise[0]["titel"]
-    assert e.hinweise[0]["helper_id"] == 1 and "Lina Brunner" in _kt(e.hinweise[0])   # Mitglied namentlich genannt
+    assert not any(z.vorname == "Reto" for z in e.korrekturen)          # erst fragen, dann importieren
+    assert e.klaerliste == [] and e.hinweise == []
+    assert len(e.vorfragen) == 1
+    v = e.vorfragen[0]
+    assert v["helper_id"] == 1 and v["name"] == "Reto Brunner"
+    assert v["kandidaten"] == [{"fg": "FG-1", "name": "Lina Brunner", "telefon": "", "portal_account": "lina@example.ch"}]
+
+def test_vorfrage_beantwortet_zweitaccount_erzeugt_importzeile_mit_fg():
+    a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied", "Bar"), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")],
+                   REGELN, HEUTE, entscheide={"1": {"antwort": "zweitaccount", "fg": "FG-1"}})
+    assert e.vorfragen == [] and e.klaerliste == []
+    z = next(z for z in e.korrekturen if z.vorname == "Reto")
+    assert z.bemerkungen == "FG-1" and z.zielwert == "0" and set(z.gruppe.split(", ")) == {"Bar", "Freiwillige"}
+    assert "deine Antwort" in z.grund and "Lina Brunner" in z.grund
+
+def test_vorfrage_zweitaccount_mit_belegter_bemerkung_gibt_klaerfall():
+    a = classify({"id": 1, "firstName": "Reto", "lastName": "Brunner", "email": "reto@example.ch",
+                  "adminRemarks": "zahlt bar", "groups": [{"id": 1, "name": "Mitglied"}],
+                  "stateCache": {"requestedValue": 2, "plannedValue": 0}})
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")],
+                   REGELN, HEUTE, entscheide={"1": {"antwort": "zweitaccount", "fg": "FG-1"}})
+    z = next(z for z in e.korrekturen if z.vorname == "Reto")
+    assert z.bemerkungen == "" and z.zielwert == "0"                     # Import überschreibt keine Bemerkung
+    assert len(e.klaerliste) == 1 and "belegt" in e.klaerliste[0]["titel"] and "zahlt bar" in _kt(e.klaerliste[0])
+
+def test_vorfrage_beantwortet_andere_person_importiert_ohne_fg():
+    a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")],
+                   REGELN, HEUTE, entscheide={"1": {"antwort": "andere"}})
+    z = next(z for z in e.korrekturen if z.vorname == "Reto")
+    assert z.bemerkungen == "" and z.zielwert == "0" and "andere Person" in z.grund
+    assert e.vorfragen == [] and e.klaerliste == []
+
+def test_vorfrage_unklar_wird_klaerfall_mit_telefon_ohne_importzeile():
+    a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    k = _k_erw(1, "Lina", "Brunner", "lina@example.ch"); k.telefon = "079 123 45 67"
+    e = gleiche_ab([k], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")],
+                   REGELN, HEUTE, entscheide={"1": {"antwort": "unklar"}})
+    assert not any(z.vorname == "Reto" for z in e.korrekturen)
+    assert len(e.klaerliste) == 1 and "079 123 45 67" in _kt(e.klaerliste[0])
+
+def test_vorfrage_mit_fremder_fg_zaehlt_als_unbeantwortet():
+    a = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [a, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")],
+                   REGELN, HEUTE, entscheide={"1": {"antwort": "zweitaccount", "fg": "FG-999"}})
+    assert len(e.vorfragen) == 1 and e.korrekturen == []
 
 def test_fall_c_nur_mail_passt_wird_klaerfall_mit_vorschlag():
     a = _acc(1, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
@@ -445,12 +488,11 @@ def test_neueintritt_ohne_mail_nennt_telefon_zum_anrufen():
     t = _kt(e.klaerliste[0])
     assert "052 111 22 33" in t and "Anrufen" in t
 
-def test_nachnamen_hinweis_ist_strukturiert_und_nach_einsaetzen_sortiert():
+def test_vorfragen_nach_einsaetzen_sortiert_und_geschwister_als_kandidaten():
     ohne = _acc(1, "Reto", "Brunner", "reto@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
     mit = classify({"id": 3, "firstName": "Urs", "lastName": "Brunner", "email": "urs@example.ch", "adminRemarks": "",
                     "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0, "okAssignmentsNum": 4}})
-    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(4, "Eva", "Keller", "eva@example.ch")],
-                   [ohne, mit, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1"), _acc(4, "Eva", "Keller", "eva@example.ch", "FG-4")], REGELN, HEUTE)
-    assert [h["titel"].split(":")[0] for h in e.hinweise] == ["Urs Brunner", "Reto Brunner"]
-    assert all(h["wo"] == "Portal" and h["fg"] == "FG-1" for h in e.hinweise)
-    assert any("Bemerkung «FG-1»" in o for o in e.hinweise[0]["optionen"])
+    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(4, "Eva", "Brunner", "eva@example.ch")],
+                   [ohne, mit, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1"), _acc(4, "Eva", "Brunner", "eva@example.ch", "FG-4")], REGELN, HEUTE)
+    assert [v["name"] for v in e.vorfragen] == ["Urs Brunner", "Reto Brunner"]
+    assert [k["fg"] for k in e.vorfragen[0]["kandidaten"]] == ["FG-1", "FG-4"]
