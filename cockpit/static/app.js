@@ -10,7 +10,7 @@ const S = {
 };
 // Geführter Abgleich: step 0 = Start, 1 = Daten, 2 = Abarbeiten, 3 = Kontrolle, 4 = fertig. checks = abgehakte Punkte
 // (nur Schlüssel wie "h:3", keine Personendaten) — bleiben im Browser-Speicher erhalten.
-const W = { step: 0, abgleich: null, checks: {}, ack: false, runId: null, dateiName: "" };
+const W = { step: 0, abgleich: null, checks: {}, wahl: {}, offen: {}, phase: null, ack: false, runId: null, dateiName: "" };
 const WIZ_KEY = "hc2-abgleich";
 
 const TYP_LABEL = { mitglied: "Mitglied", zweitaccount: "Zweitaccount", freiwillig: "Freiwillig",
@@ -371,10 +371,10 @@ function bindeChips(container) {
 
 // ------------------------------------------------------------------ Geführter Abgleich ----
 function wizSpeichern() {
-  try { localStorage.setItem(WIZ_KEY, JSON.stringify({ runId: W.runId, step: W.step, checks: W.checks, ack: W.ack, dateiName: W.dateiName })); } catch (e) { /* Speicher optional */ }
+  try { localStorage.setItem(WIZ_KEY, JSON.stringify({ runId: W.runId, step: W.step, checks: W.checks, wahl: W.wahl, phase: W.phase, ack: W.ack, dateiName: W.dateiName })); } catch (e) { /* Speicher optional */ }
 }
 function wizLaden() {
-  try { const s = JSON.parse(localStorage.getItem(WIZ_KEY) || "null"); if (s && s.runId) { W.runId = s.runId; W.checks = s.checks || {}; W.ack = !!s.ack; W.dateiName = s.dateiName || ""; return s; } } catch (e) { /* ignorieren */ }
+  try { const s = JSON.parse(localStorage.getItem(WIZ_KEY) || "null"); if (s && s.runId) { W.runId = s.runId; W.checks = s.checks || {}; W.wahl = s.wahl || {}; W.phase = s.phase || null; W.ack = !!s.ack; W.dateiName = s.dateiName || ""; return s; } } catch (e) { /* ignorieren */ }
   return null;
 }
 function wizRunId(d) { return `${d.geprueft}|${d.zusammenfassung}|${basename((d.dateien || {}).import || "")}`; }
@@ -504,7 +504,7 @@ async function fairgateHochladen(datei) {
     const d = await holeJson("/api/fairgate", { method: "POST", body: await datei.arrayBuffer() });
     zeigeFehler("fairgate", null);
     const neuerRun = wizRunId(d);
-    if (W.runId !== neuerRun) { W.checks = {}; W.ack = false; }
+    if (W.runId !== neuerRun) { W.checks = {}; W.wahl = {}; W.offen = {}; W.phase = null; W.ack = false; }
     W.runId = neuerRun; W.abgleich = d; W.dateiName = datei.name; wizSpeichern();
     dz.innerHTML = ic("check") + `<br><b>${esc(datei.name)}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
     renderPlausi(d);
@@ -536,13 +536,17 @@ function clItem(key, titel, detail, aktionen = "") {
 }
 function klaerItem(key, kf, mitHaken = true) {
   const done = !!W.checks[key];
+  const wahl = W.wahl[key];
   const fakten = (kf.fakten || []).map((f) => `<li>${esc(f)}</li>`).join("");
-  const optionen = (kf.optionen || []).map((o) => { const i = o.indexOf(" → "); const wenn = i < 0 ? o : o.slice(0, i), dann = i < 0 ? "" : o.slice(i + 3); return `<li><b>${esc(wenn)}</b>${dann ? ` → ${esc(dann)}` : ""}</li>`; }).join("");
+  const opts = (kf.optionen || []).map((o) => { const i = o.indexOf(" → "); return { wenn: i < 0 ? o : o.slice(0, i), dann: i < 0 ? "" : o.slice(i + 3) }; });
+  const knoepfe = opts.length ? `<div class="wahl"><span class="wahl-frage">${wahl == null ? "Was trifft zu?" : "Deine Wahl:"}</span>${opts.map((o, i) => `<button type="button" class="opt ${wahl === i ? "on" : ""}" data-wahl="${esc(key)}" data-i="${i}">${esc(o.wenn)}</button>`).join("")}</div>${wahl != null && opts[wahl] ? `<div class="dann">${ic("chev", "sm")}<span>${esc(opts[wahl].dann || "Nichts weiter zu tun.")}</span></div>` : ""}` : "";
   const schritte = (kf.schritte || []).map((s) => `<li>${esc(s)}</li>`).join("");
   const links = kf.links ? kf.links.map((l) => plink(l.url, l.text)).join("") : plink(kf.portal_url, "Im Portal öffnen");
+  const offen = wahl != null || !!W.offen[key];
+  const lead = kf.lead || (kf.fakten && kf.fakten.length ? kf.fakten[0] : "");
   return `<li class="${done ? "done" : ""} klaer">${mitHaken ? `<input type="checkbox" data-key="${esc(key)}" ${done ? "checked" : ""} aria-label="Erledigt: ${esc(kf.titel)}">` : "<span></span>"}
-    <div class="t"><b>${esc(kf.titel)}</b> ${kf.wo ? `<span class="typ ${kf.wo === "Fairgate" ? "" : "mitglied"}">${esc(kf.wo)}</span>` : ""}
-      ${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${schritte ? `<ol class="schritte">${schritte}</ol>` : ""}${optionen ? `<ul class="optionen">${optionen}</ul>` : ""}</div>
+    <details class="kf" data-kf="${esc(key)}" ${offen ? "open" : ""}><summary><b>${esc(kf.titel)}</b> ${kf.wo ? `<span class="typ ${kf.wo === "Fairgate" ? "" : "mitglied"}">${esc(kf.wo)}</span>` : ""}${lead ? `<span class="lead">${esc(lead)}</span>` : ""}</summary>
+      <div class="kf-body">${fakten ? `<ul class="fakten">${fakten}</ul>` : ""}${schritte ? `<ol class="schritte">${schritte}</ol>` : ""}${knoepfe}</div></details>
     <div class="a">${links}</div></li>`;
 }
 // Portal-eigene Befunde (D3 Doppel-Mitglied, D10 Neuregistrierung) als konkrete Schritt-Anweisungen
@@ -584,29 +588,28 @@ function portalBefunde(d) {
 }
 function renderChecklist() {
   const d = W.abgleich; if (!d) return;
-  $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Reihenfolge: erst die Punkte im Portal, dann die Import-Datei hochladen, dann Fairgate — sonst entstehen Duplikate.`;
+  $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Drei Abschnitte, in dieser Reihenfolge: erst im Portal von Hand, dann die Import-Datei, dann die Klärfälle. Es ist immer nur ein Abschnitt offen.`;
   const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` }));
   const schluessel = hand.filter((h) => h.art === "schluessel"), austritte = hand.filter((h) => h.art === "austritt");
   const befunde = portalBefunde(d);
   const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })),
     ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" }))];
   const nImport = d.neueintritte + d.korrekturen, imp = basename(d.dateien.import), liste = basename(d.dateien.liste), kont = basename(d.dateien.kontakte || "");
-  const sek = (titel, hint, items, cntOk) => `<div class="cl-section"><h3>${titel} <span class="cnt ${cntOk ? "ok" : ""}">${items.length ? `${items.filter((k) => W.checks[k]).length} / ${items.length}` : "nichts zu tun"}</span></h3>${hint ? `<p class="hint">${hint}</p>` : ""}</div>`;
-  let html = "";
-  // A · Portal — in Untergruppen, jede mit einer Erklärung statt zwölfmal demselben Satz
+  const sub = (titel, n, why) => `<div class="cl-sub">${titel} <span class="cnt">${n}</span> ${why ? `<span class="why">${why}</span>` : ""}</div>`;
+  // A · Portal von Hand
   const aKeys = [...hand.map((h) => h.key), ...warn.map((w) => w.key)];
-  html += sek("A · Im Portal von Hand", `Was der Import nicht kann: E-Mails umschreiben und Austritte löschen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a>`, aKeys, aKeys.every((k) => W.checks[k]));
-  const sub = (titel, n, why) => `<div class="cl-sub">${titel} <span class="cnt">${n}</span> <span class="why">${why}</span></div>`;
-  if (schluessel.length) html += sub("E-Mail im Portal nachführen", schluessel.length, "— sonst legt der Import ein Duplikat an") + `<ul class="checklist">${schluessel.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
-  if (austritte.length) html += sub("Austritte im Portal löschen", austritte.length, "— nicht mehr in Fairgate. Das Portal kennt kein Deaktivieren: Person öffnen, «Helfer:in löschen» (unwiderruflich, vergangene Einsätze verschwinden aus der Statistik)") + `<ul class="checklist kompakt">${austritte.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
-  if (warn.length) html += sub("Von Hand prüfen", warn.length, "") + `<ul class="checklist">${warn.map((w) => clItem(w.key, `${w.k}`, w.t)).join("")}</ul>`;
-  // B · Import — das Herzstück, darum als eigene erklärende Karte
+  let aHtml = `<p class="hint">Was der Import nicht kann: E-Mails umschreiben und Austritte löschen. Jeder Punkt hat einen Link direkt zur Person. <a class="plink" href="${ausgabeLink(liste)}" target="_blank" rel="noopener">${ic("file", "sm")}Liste zum Drucken</a></p>`;
+  if (schluessel.length) aHtml += sub("E-Mail im Portal nachführen", schluessel.length, "— sonst legt der Import ein Duplikat an") + `<ul class="checklist">${schluessel.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
+  if (austritte.length) aHtml += sub("Austritte im Portal löschen", austritte.length, "— nicht mehr in Fairgate. Das Portal kennt kein Deaktivieren: Person öffnen, «Helfer:in löschen» (unwiderruflich, vergangene Einsätze verschwinden aus der Statistik)") + `<ul class="checklist kompakt">${austritte.map((h) => clItem(h.key, `${h.name} (${h.fg})`, h.detail, plink(h.portal_url, "Im Portal öffnen"))).join("")}</ul>`;
+  if (warn.length) aHtml += sub("Von Hand prüfen", warn.length, "") + `<ul class="checklist">${warn.map((w) => clItem(w.key, `${w.k}`, w.t)).join("")}</ul>`;
+  if (!aKeys.length) aHtml = `<p class="hint">Nichts zu tun — keine E-Mail-Änderungen und keine Austritte.</p>`;
+  // B · Import
   const bKeys = nImport ? ["imp"] : [];
-  html += sek("B · Import-Datei ins Portal hochladen", nImport ? "" : "Keine Neueintritte oder Korrekturen — dieses Mal ist kein Import nötig.", bKeys, bKeys.every((k) => W.checks[k]));
+  let bHtml = nImport ? "" : `<p class="hint">Keine Neueintritte oder Korrekturen — dieses Mal ist kein Import nötig.</p>`;
   if (nImport) {
     const pfad = d.dateien.import;
     const vorschau = d.import_vorschau || [];
-    html += `<div class="importcard">
+    bHtml += `<div class="importcard">
       <div class="importhead">
         <div><div class="importtitle">${esc(imp)}</div><div class="sub">${d.neueintritte} Neueintritte · ${d.korrekturen} Korrekturen · liegt im Ordner «Ausgabe»</div></div>
         <a class="btn primary" href="${ausgabeLink(imp)}">${ic("download")}Import-Datei herunterladen</a>
@@ -625,20 +628,23 @@ function renderChecklist() {
         <div class="tablewrap begr-wrap"><table class="data" id="tab-begr"><thead><tr>
           <th class="r" data-sort="zeile">Zeile<span class="sorticon">↕</span></th><th data-sort="name">Person<span class="sorticon">↕</span></th><th data-sort="art">Art<span class="sorticon">↕</span></th><th data-sort="kategorie">Warum<span class="sorticon">↕</span></th><th>Begründung und was geschrieben wird</th></tr></thead><tbody id="tab-begr-body"></tbody></table></div>
         <div class="tfoot" id="tfoot-begr"></div></div>` : ""}
-    </div>
-    <ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
+    </div>`;
+    bHtml += `<ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
-  // C · Klärfälle — Entscheidungen, mit Fakten und Optionen
+  // C · Klärfälle
   const cKeys = [...d.klaerliste.map((_, i) => `k:${i}`), ...befunde.map((b) => b.key)];
-  html += sek("C · Klärfälle — hier entscheidest du", cKeys.length ? "Erst nach dem Import, damit die Import-Datei gültig bleibt. Jeder Punkt sagt, um welchen Account es geht, was bekannt ist und was bei welcher Antwort zu tun ist — den Rest erledigt der nächste Abgleich automatisch." : "", cKeys, cKeys.every((k) => W.checks[k]));
-  if (d.klaerliste.length) html += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
-  if (befunde.length) html += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie? Zweitaccount behalten, Ersatz-Account zusammenführen") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
-  // Info: möglicher Zweitaccount — der Import stimmt so oder so, nur die FG-Nummer wäre ein Gewinn
+  let cHtml = cKeys.length ? `<p class="hint">Erst nach dem Import, damit die Import-Datei gültig bleibt. Jeden Punkt aufklappen: Was trifft zu? — dann erscheint nur die Anleitung für diesen Fall.</p>` : `<p class="hint">Keine Klärfälle — nichts zu entscheiden.</p>`;
+  if (d.klaerliste.length) cHtml += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
+  if (befunde.length) cHtml += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie?") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
   const hinweise = d.hinweise || [];
-  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
+  if (hinweise.length) cHtml += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
   const abw = d.kontakt_abweichungen || [];
-  if (abw.length) html += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
-  $("wiz-3-liste").innerHTML = html;
+  if (abw.length) cHtml += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
+  // Phasen: nur eine offen — die erste mit offenen Punkten, oder die gemerkte
+  const phasen = [{ id: "A", titel: "Im Portal von Hand", keys: aKeys, html: aHtml }, { id: "B", titel: "Import-Datei ins Portal hochladen", keys: bKeys, html: bHtml }, { id: "C", titel: "Klärfälle — hier entscheidest du", keys: cKeys, html: cHtml }];
+  const ersteOffene = phasen.find((p) => p.keys.some((k) => !W.checks[k]));
+  const offenId = W.phase && phasen.some((p) => p.id === W.phase) ? W.phase : (ersteOffene ? ersteOffene.id : "C");
+  $("wiz-3-liste").innerHTML = phasen.map((p) => `<details class="phase" data-phase="${p.id}" ${p.id === offenId ? "open" : ""}><summary><span class="ph">${p.id}</span><span class="pt">${p.titel}</span><span class="cnt"></span><span class="ps"></span></summary><div class="phase-body">${p.html}</div></details>`).join("");
   if (vorschauAktiv(d)) initBegruendung(d.import_vorschau);
   aktualisiereFortschritt();
 }
@@ -675,15 +681,19 @@ function renderBegruendung(zeilen) {
 function aktualisiereFortschritt() {
   const boxen = [...document.querySelectorAll("#wiz-3-liste input[data-key]")];
   const erledigt = boxen.filter((cb) => cb.checked).length;
-  document.querySelectorAll("#wiz-3-liste .cl-section").forEach((sec) => {
-    const ul = sec.nextElementSibling && sec.nextElementSibling.classList.contains("checklist") ? sec.nextElementSibling : null;
-    const cnt = sec.querySelector(".cnt"); if (!cnt || !ul) return;
-    const b = [...ul.querySelectorAll("input[data-key]")], d = b.filter((x) => x.checked).length;
-    cnt.textContent = `${d} / ${b.length}`; cnt.classList.toggle("ok", d === b.length);
+  document.querySelectorAll("#wiz-3-liste details.phase").forEach((ph) => {
+    const b = [...ph.querySelectorAll("input[data-key]")], d = b.filter((x) => x.checked).length;
+    const cnt = ph.querySelector("summary .cnt"), ps = ph.querySelector("summary .ps");
+    cnt.textContent = b.length ? `${d} / ${b.length}` : "nichts zu tun"; cnt.classList.toggle("ok", d === b.length);
+    ps.textContent = d === b.length ? "erledigt" : `${b.length - d} offen`; ps.classList.toggle("ok", d === b.length);
   });
   $("wiz-3-progress").style.width = boxen.length ? `${Math.round(erledigt / boxen.length * 100)}%` : "100%";
   $("wiz-3-progress-text").textContent = boxen.length ? `${erledigt} von ${boxen.length} Punkten erledigt` : "Nichts abzuarbeiten — direkt zur Kontrolle.";
   $("wiz-btn-3").disabled = erledigt < boxen.length;
+}
+function oeffnePhase(id) {
+  document.querySelectorAll("#wiz-3-liste details.phase").forEach((ph) => { ph.open = ph.dataset.phase === id; });
+  W.phase = id; wizSpeichern();
 }
 async function wizKontrolle() {
   const el = $("wiz-4-ergebnis");
@@ -801,7 +811,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     W.checks[cb.dataset.key] = cb.checked; wizSpeichern();
     cb.closest("li").classList.toggle("done", cb.checked);
     aktualisiereFortschritt();
+    const ph = cb.closest("details.phase");
+    if (ph && cb.checked && ![...ph.querySelectorAll("input[data-key]")].some((x) => !x.checked)) {
+      const naechste = ph.nextElementSibling; if (naechste && naechste.classList.contains("phase")) { oeffnePhase(naechste.dataset.phase); toast(`Abschnitt ${ph.dataset.phase} erledigt — weiter mit ${naechste.dataset.phase}.`); }
+    }
   });
+  $("wiz-3-liste").addEventListener("click", (e) => {
+    const b = e.target.closest("button.opt"); if (!b) return;
+    const key = b.dataset.wahl, i = Number(b.dataset.i);
+    W.wahl[key] = W.wahl[key] === i ? null : i; wizSpeichern();
+    const kf = b.closest("details.kf"), li = b.closest("li");
+    const quelle = W.abgleich && (key.startsWith("k:") ? W.abgleich.klaerliste[Number(key.slice(2))] : key.startsWith("i:") ? W.abgleich.hinweise[Number(key.slice(2))] : portalBefunde(W.abgleich).find((x) => x.key === key));
+    if (quelle) { W.offen[key] = true; li.outerHTML = klaerItem(key, quelle, !key.startsWith("i:")); }
+  });
+  $("wiz-3-liste").addEventListener("toggle", (e) => {
+    const t = e.target;
+    if (t.classList.contains("phase")) { if (t.open) document.querySelectorAll("#wiz-3-liste details.phase").forEach((ph) => { if (ph !== t) ph.open = false; }); if (t.open) { W.phase = t.dataset.phase; wizSpeichern(); } }
+    else if (t.classList.contains("kf")) W.offen[t.dataset.kf] = t.open;
+  }, true);
   const dz = $("dropzone"), input = $("datei-input");
   dz.addEventListener("click", () => input.click());
   dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });

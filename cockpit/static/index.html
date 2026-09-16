@@ -317,25 +317,43 @@
   .ack input{margin-top:3px; accent-color:var(--warn)}
   .checklist{margin:0; padding:0; list-style:none}
   /* Nur die direkten Zeilen sind Grid — verschachtelte Listen (Fakten, Schritte, Optionen) nicht! */
-  .checklist > li{display:grid; grid-template-columns:24px 1fr auto; gap:12px; align-items:start; padding:10px 6px; border-bottom:1px solid var(--border); font-size:13.5px}
+  .checklist > li{display:grid; grid-template-columns:24px 1fr auto; gap:12px; align-items:start; padding:12px 8px; border-bottom:1px solid var(--border); font-size:14px; line-height:1.5}
   .checklist > li:last-child{border-bottom:none}
-  .checklist > li > input{width:18px; height:18px; margin-top:1px; accent-color:var(--ok); cursor:pointer}
+  .checklist > li > input{width:19px; height:19px; margin-top:2px; accent-color:var(--ok); cursor:pointer}
   .checklist > li.done > .t > b{color:var(--muted); text-decoration:line-through; text-decoration-color:var(--border-strong)}
   .checklist > li.done > .t{color:var(--muted)}
   .checklist .t b{display:block}
-  .checklist .t span{color:var(--muted); font-size:12.5px}
+  .checklist .t span{color:var(--muted); font-size:13px}
   .checklist .a{display:flex; gap:6px}
   .checklist li.klaer .t b{display:inline}
-  .fakten{margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--muted); display:grid; gap:2px}
-  .optionen{margin:8px 0 0; padding-left:0; list-style:none; display:grid; gap:4px; font-size:12.5px}
+  .fakten{margin:8px 0 0; padding-left:18px; font-size:13px; color:var(--ink2); display:grid; gap:3px; line-height:1.5}
+  .optionen{margin:8px 0 0; padding-left:0; list-style:none; display:grid; gap:4px; font-size:13px}
   .optionen li{padding:6px 10px; background:var(--surface2); border-radius:6px}
   .optionen li b{color:var(--ink)}
-  .cl-sub{display:flex; align-items:baseline; gap:8px; margin:14px 0 4px; font-size:12.5px; font-weight:700}
+  .cl-sub{display:flex; align-items:baseline; gap:8px; margin:16px 0 4px; font-size:13.5px; font-weight:700}
   .cl-sub .cnt{font-size:11px; color:var(--muted); font-weight:600; background:var(--surface2); border-radius:99px; padding:1px 7px}
   .cl-sub .why{font-weight:400; color:var(--muted)}
-  .checklist.kompakt > li{padding:6px 6px}
+  .checklist.kompakt > li{padding:8px 8px}
   .checklist li.klaer .t{min-width:0}
-  .checklist .fakten li, .checklist .schritte li, .checklist .optionen li{display:list-item; grid-template-columns:none; padding:0; border:none; font-size:12.5px}
+  .checklist .fakten li, .checklist .schritte li, .checklist .optionen li{display:list-item; grid-template-columns:none; padding:0; border:none; font-size:13px}
+  /* Klärfall zugeklappt: Titel + eine Zeile; aufgeklappt: Fakten, Wahl-Knöpfe, Anleitung des gewählten Zweigs */
+  details.kf{min-width:0} details.kf > summary{cursor:pointer; list-style:none; display:block} details.kf > summary::-webkit-details-marker{display:none}
+  details.kf > summary::before{content:"▸"; display:inline-block; width:14px; color:var(--muted); font-size:12px; transition:transform .15s} details.kf[open] > summary::before{transform:rotate(90deg)}
+  details.kf > summary b{display:inline} details.kf > summary .lead{display:block; margin-left:14px; color:var(--muted); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70ch}
+  details.kf[open] > summary .lead{display:none}
+  .kf-body{margin:4px 0 4px 14px}
+  .wahl{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px} .wahl-frage{font-size:13px; font-weight:700; margin-right:2px}
+  .opt{font:600 13px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:8px; padding:7px 12px; cursor:pointer}
+  .opt:hover{border-color:var(--ink)} .opt.on{background:var(--btn); color:var(--btn-ink); border-color:var(--btn)}
+  .dann{display:flex; gap:8px; align-items:flex-start; margin-top:10px; padding:10px 12px; background:var(--surface2); border-radius:8px; font-size:13.5px; line-height:1.5} .dann .ic{margin-top:3px; flex:none}
+  /* Phasen A/B/C als Akkordeon — nur eine offen */
+  details.phase{border:1px solid var(--border); border-radius:var(--r); background:var(--surface); margin-top:12px}
+  details.phase > summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:12px; padding:14px 16px; font-size:15px; font-weight:800; font-family:var(--display)} details.phase > summary::-webkit-details-marker{display:none}
+  details.phase > summary .ph{width:28px; height:28px; border-radius:50%; background:var(--btn); color:var(--btn-ink); display:flex; align-items:center; justify-content:center; font-size:13px; flex:none}
+  details.phase > summary .pt{flex:1} details.phase > summary .cnt{font-size:12px; color:var(--muted); font-weight:600; background:var(--surface2); border-radius:99px; padding:2px 9px; font-family:var(--body)}
+  details.phase > summary .cnt.ok{color:var(--ok); background:var(--ok-soft)} details.phase > summary .ps{font-size:12.5px; color:var(--muted); font-weight:600; font-family:var(--body); min-width:64px; text-align:right} details.phase > summary .ps.ok{color:var(--ok)}
+  details.phase:not([open]) > summary .ph{background:var(--surface2); color:var(--ink2)} details.phase[open] > summary{border-bottom:1px solid var(--border)}
+  .phase-body{padding:12px 16px 16px} .phase-body > .hint{font-size:13.5px; color:var(--muted); margin:0 0 6px; line-height:1.5}
   .checklist .optionen li{padding:6px 10px; list-style:none}
   .schritte{margin:8px 0 0; padding-left:18px; font-size:12.5px; display:grid; gap:3px}
   .schritte li{padding:0}
