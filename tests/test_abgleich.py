@@ -92,7 +92,9 @@ def test_fg_nachtrag_bei_belegter_bemerkung_auf_klaerliste():
     k = FgKontakt(fg="FG-8", vorname="Noah", nachname="Keller", email="noah@example.ch",
                  telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
-    assert e.neueintritte == [] and e.duplikat_warnungen == [] and e.korrekturen == []
+    assert e.neueintritte == [] and e.duplikat_warnungen == []
+    z = [z for z in e.korrekturen if z.vorname == "Noah"]
+    assert len(z) == 1 and z[0].bemerkungen == "" and z[0].zielwert == "2"     # Zielwert/Gruppe ja, FG nein
     assert len(e.klaerliste) == 1
     assert "Bemerkungsfeld" in _kt(e.klaerliste[0])
 
@@ -189,7 +191,9 @@ def test_namensgleicher_account_ohne_fg_wird_klaerfall_nicht_importiert():
                  telefon="", geburtsdatum="2000-01-01", kategorie="Aktivmitglied", eltern_email="")
     e = gleiche_ab([k], [konto, mit_fg], REGELN, HEUTE)
     assert e.neueintritte == [] and not any(z.vorname == "Noah" for z in e.korrekturen)
-    assert len(e.klaerliste) == 1 and "Noah Keller" in _kt(e.klaerliste[0]) and "FG-8" in _kt(e.klaerliste[0])
+    assert e.klaerliste == [] and len(e.vorfragen) == 1
+    v = e.vorfragen[0]
+    assert v["fall"] == "name" and v["kandidaten"][0]["fg"] == "FG-8" and [o["antwort"] for o in v["optionen"]] == ["gleiche_person", "andere", "unklar"]
 
 
 # ---- Minor: Geburtsdatum auch DD.MM.YYYY, unparseable -> Klärliste ------
@@ -357,13 +361,27 @@ def test_vorfrage_mit_fremder_fg_zaehlt_als_unbeantwortet():
                    REGELN, HEUTE, entscheide={"1": {"antwort": "zweitaccount", "fg": "FG-999"}})
     assert len(e.vorfragen) == 1 and e.korrekturen == []
 
-def test_fall_c_nur_mail_passt_wird_klaerfall_mit_vorschlag():
+def test_fall_c2_nur_mail_passt_wird_vorfrage_und_antworten_wirken():
     a = _acc(1, "Petra", "Odermatt", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
-    e = gleiche_ab([_k_erw(5, "Jan", "Odermatt", "familie@example.ch")], [a], REGELN, HEUTE)
-    assert e.neueintritte == [] and e.korrekturen == []
-    kf = e.klaerliste[0]
-    assert len(e.klaerliste) == 1 and "FG-5" in _kt(kf) and kf["wo"] == "Portal" and kf["helper_id"] == 1
-    assert len(kf["optionen"]) == 2 and any("Elternteil" in o for o in kf["optionen"])
+    k = _k_erw(5, "Jan", "Odermatt", "familie@example.ch")
+    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    assert e.neueintritte == [] and e.korrekturen == [] and e.klaerliste == []
+    v = e.vorfragen[0]
+    assert v["fall"] == "email" and v["schluessel"] == "email:FG-5" and [o["antwort"] for o in v["optionen"]] == ["elternteil", "gleiche_person", "unklar"]
+    # Elternteil → Zweitaccount-Zeile UND Neueintritt fürs Kind mit derselben E-Mail
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "elternteil", "fg": "FG-5", "schluessel": "email:FG-5"}})
+    assert e.vorfragen == []
+    z = next(z for z in e.korrekturen if z.vorname == "Petra")
+    assert z.bemerkungen == "FG-5" and "Elternteil" in z.grund
+    assert len(e.neueintritte) == 1 and e.neueintritte[0].vorname == "Jan" and e.neueintritte[0].email == "familie@example.ch"
+    # Gleiche Person → FG + Mitglied + Zielwert auf den bestehenden Account, kein Neueintritt, Namens-Info
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "gleiche_person", "fg": "FG-5", "schluessel": "email:FG-5"}})
+    z = next(z for z in e.korrekturen if z.vorname == "Petra")
+    assert z.bemerkungen == "FG-5" and z.zielwert == "2" and "Mitglied" in z.gruppe
+    assert e.neueintritte == [] and any("Name im Portal weicht" in h["titel"] for h in e.hinweise)
+    # Antwort mit anderem Schlüssel (Konstellation geändert) zählt nicht
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "elternteil", "fg": "FG-5", "schluessel": "email:FG-6"}})
+    assert len(e.vorfragen) == 1
 
 def test_fall_d_exakter_treffer_bei_bestehendem_mitgliedsaccount_wird_zweitaccount():
     haupt = _acc(1, "Lina", "Brunner", "lina@example.ch", "FG-1")
@@ -455,19 +473,28 @@ def test_austritt_nennt_offene_einsaetze_oder_keine():
     e = gleiche_ab([], [b], REGELN, HEUTE)
     assert "3 offene Einsätze" in e.handarbeit[0].detail
 
-def test_fall_e_mit_bestehendem_account_bietet_zweitaccount_und_ersatz_an():
-    neu = _acc(1, "Lina", "Brunner", "mama.brunner@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+def test_fall_e_mit_bestehendem_account_vorfrage_und_ersatz_macht_alten_zum_zweitaccount():
+    neu = _acc(1, "Lina", "Brunner", "mama.brunner@example.ch", None, gruppen=("Freiwillige",), ziel=1.0)
     alt = _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1")
     k = _k_erw(1, "Lina", "Brunner", "")
     k.telefon = "079 000 00 00"
     e = gleiche_ab([k], [neu, alt], REGELN, HEUTE)
-    kf = e.klaerliste[0]
-    t = _kt(kf)
-    assert "—" not in " ".join(kf["fakten"]) and "keiner E-Mail" in t and "079 000 00 00" in t
-    assert any(o.startswith("Zweitaccount") for o in kf["optionen"])
-    assert any(o.startswith("Dieselbe Person") and "löschen" in o and "lina@example.ch" in o for o in kf["optionen"])
-    assert all(o.count(" → ") == 1 for o in kf["optionen"])        # das Frontend trennt am ersten Pfeil
-    assert not any(z.vorname == "Lina" and z.email == "mama.brunner@example.ch" for z in e.korrekturen)
+    assert e.klaerliste == [] and not any(z.email == "mama.brunner@example.ch" for z in e.korrekturen)
+    v = e.vorfragen[0]
+    t = " ".join([v["frage"]] + v["fakten"])
+    assert "—" not in " ".join(v["fakten"]) and "keiner E-Mail" in t and "079 000 00 00" in t and "lina@example.ch" in t
+    assert [o["antwort"] for o in v["optionen"]] == ["zweitaccount", "ersatz", "andere", "unklar"]
+    # Ersatz: neuer Account wird Mitglied, alter behält FG und wird Freiwillige(r) mit Zielwert 0
+    e = gleiche_ab([k], [neu, alt], REGELN, HEUTE, entscheide={"1": {"antwort": "ersatz", "fg": "FG-1", "schluessel": "name:FG-1"}})
+    zn = next(z for z in e.korrekturen if z.email == "mama.brunner@example.ch")
+    za = next(z for z in e.korrekturen if z.email == "lina@example.ch")
+    assert zn.bemerkungen == "FG-1" and zn.zielwert == "2" and "Mitglied" in zn.gruppe
+    assert za.bemerkungen == "" and za.zielwert == "0" and "Freiwillige" in za.gruppe and "Mitglied" not in za.gruppe
+    assert e.neueintritte == [] and e.handarbeit == [] and any("ersetzt durch" in h["titel"] for h in e.hinweise)
+    # Zweitaccount: nur der neue bekommt eine Zeile
+    e = gleiche_ab([k], [neu, alt], REGELN, HEUTE, entscheide={"1": {"antwort": "zweitaccount", "fg": "FG-1", "schluessel": "name:FG-1"}})
+    zn = next(z for z in e.korrekturen if z.email == "mama.brunner@example.ch")
+    assert zn.bemerkungen == "FG-1" and zn.zielwert == "0" and not any("ersetzt" in z.grund for z in e.korrekturen)
 
 def test_fall_e_erledigter_namensvetter_taucht_nicht_mehr_auf():
     # Gleicher Name, bereits Freiwillige(r) mit Zielwert 0, Mitglied hat eigenen Account → still
@@ -476,10 +503,15 @@ def test_fall_e_erledigter_namensvetter_taucht_nicht_mehr_auf():
     e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [nv, alt], REGELN, HEUTE)
     assert e.klaerliste == [] and e.neueintritte == []
 
-def test_fall_e_ohne_bestehenden_account_bleibt_klaerfall():
+def test_fall_e_ohne_bestehenden_account_vorfrage_gleiche_person_und_andere():
     nv = _acc(1, "Lina", "Brunner", "andere@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
-    e = gleiche_ab([_k_erw(1, "Lina", "Brunner", "lina@example.ch")], [nv], REGELN, HEUTE)
-    assert len(e.klaerliste) == 1 and e.neueintritte == []          # sonst entstünde ein Duplikat
+    k = _k_erw(1, "Lina", "Brunner", "lina@example.ch")
+    e = gleiche_ab([k], [nv], REGELN, HEUTE)
+    assert len(e.vorfragen) == 1 and e.neueintritte == []          # sonst entstünde ein Duplikat
+    e = gleiche_ab([k], [nv], REGELN, HEUTE, entscheide={"1": {"antwort": "gleiche_person", "fg": "FG-1", "schluessel": "name:FG-1"}})
+    assert e.korrekturen[0].bemerkungen == "FG-1" and e.korrekturen[0].zielwert == "2" and e.neueintritte == []
+    e = gleiche_ab([k], [nv], REGELN, HEUTE, entscheide={"1": {"antwort": "andere", "fg": "", "schluessel": "name:FG-1"}})
+    assert e.korrekturen == [] and len(e.neueintritte) == 1 and e.neueintritte[0].email == "lina@example.ch"
 
 def test_neueintritt_ohne_mail_nennt_telefon_zum_anrufen():
     k = _kontakt(9, "Neu", "Kind", eltern="")

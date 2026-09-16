@@ -22,6 +22,9 @@ STATIC_RESOLVED = STATIC.resolve()
 SICHTEN = ("saison", "halbjahr")
 
 
+ANTWORTEN = ("zweitaccount", "andere", "unklar", "elternteil", "gleiche_person", "ersatz")
+
+
 @dataclass
 class Zustand:
     helpers: list = None
@@ -67,11 +70,12 @@ class Zustand:
             if not ent:
                 continue
             eintrag = {"antwort": ent.get("antwort"), "fg": ent.get("fg") or "", "name": ent.get("name") or "",
-                       "zeit": datetime.date.today().isoformat()}
+                       "fall": ent.get("fall") or "", "schluessel": ent.get("schluessel") or "",
+                       "kandidaten": ent.get("kandidaten") or "", "zeit": datetime.date.today().isoformat()}
             if eintrag["antwort"] == "andere":
-                gespeichert[hid] = eintrag
-            elif eintrag["antwort"] in ("zweitaccount", "unklar"):
-                self.entscheide[hid] = eintrag
+                gespeichert[hid] = eintrag             # dauerhaft: die Frage kommt nicht wieder
+            elif eintrag["antwort"] in ANTWORTEN:
+                self.entscheide[hid] = eintrag         # nur diese Sitzung: erledigt sich per Import
         self.ausgabe_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.entscheide_pfad().with_suffix(".tmp")
         tmp.write_text(json.dumps(gespeichert, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -288,6 +292,9 @@ def starte_server(zustand, port=0):
             if pfad == "/api/regeln":
                 from dataclasses import asdict
                 return self._json(asdict(lade_regeln(zustand.regeln_pfad)))
+            if pfad == "/api/entscheide":
+                _, gespeichert = zustand.lade_entscheide()
+                return self._json({"entscheide": gespeichert})
             if pfad == "/api/abgleich/letzter":
                 if not zustand.letztes_ergebnis:
                     return self._json({"fehler": "In dieser Sitzung wurde noch kein Abgleich gemacht."}, 404)
@@ -378,6 +385,14 @@ def starte_server(zustand, port=0):
                     return self._json(abgleich_ausfuehren(zustand, kontakte))
                 except (FalscheDatei, ValueError) as e:
                     return self._json({"fehler": str(e)}, 400)
+            if u.path == "/api/entscheide/loeschen":
+                daten = json.loads(self._body() or b"{}")
+                ids = daten.get("helper_ids") or []
+                zustand.speichere_entscheide({str(h): None for h in ids})
+                if zustand.fairgate_kontakte:
+                    abgleich_ausfuehren(zustand, zustand.fairgate_kontakte, protokollieren=False)
+                _, gespeichert = zustand.lade_entscheide()
+                return self._json({"entscheide": gespeichert, "abgleich_aktualisiert": bool(zustand.fairgate_kontakte)})
             if u.path == "/api/abgleich/entscheide":
                 # Vorfragen beantworten: Antworten merken und die Import-Datei damit neu erzeugen
                 if not zustand.fairgate_kontakte:
@@ -388,7 +403,7 @@ def starte_server(zustand, port=0):
                     if not isinstance(neue, dict):
                         raise ValueError("entscheide muss ein Objekt sein")
                     for ent in neue.values():
-                        if ent and ent.get("antwort") not in ("zweitaccount", "andere", "unklar"):
+                        if ent and ent.get("antwort") not in ANTWORTEN:
                             raise ValueError("Unbekannte Antwort")
                     if daten.get("zuruecksetzen"):
                         _, gespeichert = zustand.lade_entscheide()

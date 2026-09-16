@@ -79,6 +79,8 @@ def schreibe_saeumigen_csv(mitglieder, sicht, halbjahresziel, pfad):
 
 # Kurzlabel je Begründung — für Filter-Chips und die Spalte «Warum»
 _GRUND_KATEGORIEN = (("Neueintritt", "Neueintritt"), ("Zweitaccount", "Zweitaccount"),
+                     ("Ersetzt den bisherigen", "Ersatz-Account"), ("Bisheriger Account", "Ersatz-Account"),
+                     ("Ist Mitglied", "FG-Nummer nachtragen"),
                      ("Kein Mitglied", "Kein Mitglied in Fairgate → Freiwillige"),
                      ("Unbekannt", "Unbekannt mit Einsätzen → Freiwillige"),
                      ("ohne Helferpflicht", "Keine Helferpflicht → Zielwert 0"),

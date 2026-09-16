@@ -77,6 +77,31 @@ function zeigePanel(id) {
 function zeigeSub(id) {
   document.querySelectorAll(".subtabs [data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === id)));
   document.querySelectorAll(".subpanel").forEach((p) => p.classList.toggle("active", p.id === id));
+  if (id === "s-antworten") ladeAntworten();
+}
+// ---- Einstellungen · Gemerkte Antworten («Andere Person» aus den Vorfragen) ----
+async function ladeAntworten() {
+  const el = $("antworten-liste"); if (!el) return;
+  try {
+    const d = await holeJson("/api/entscheide");
+    renderAntworten(d.entscheide || {});
+  } catch (e) { el.innerHTML = `<div class="empty"><b>Konnte nicht laden</b>${esc(e.message)}</div>`; }
+}
+function renderAntworten(ent) {
+  const el = $("antworten-liste");
+  const eintraege = Object.entries(ent);
+  $("sub-n-antworten").textContent = eintraege.length ? `· ${eintraege.length}` : "";
+  if (!eintraege.length) { el.innerHTML = `<div class="empty"><b>Nichts gemerkt</b>Antworten «Andere Person» aus den Vorfragen des Abgleichs erscheinen hier.</div>`; return; }
+  el.innerHTML = `<ul class="checklist kompakt">${eintraege.map(([id, e]) => `<li><span></span><div class="t"><b>${esc(e.name || `Account ${id}`)}</b><span>${esc(FALL_LABEL[e.fall] || "")}${e.kandidaten ? ` wie ${esc(e.kandidaten)}` : ""} → ${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.zeit ? ` · gemerkt am ${esc(e.zeit)}` : ""}</span></div><div class="a"><button class="btn" data-antwort-loeschen="${esc(id)}">Vergessen</button></div></li>`).join("")}</ul>`;
+  el.querySelectorAll("[data-antwort-loeschen]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const d = await holeJson("/api/entscheide/loeschen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ helper_ids: [b.dataset.antwortLoeschen] }) });
+      renderAntworten(d.entscheide || {});
+      toast(d.abgleich_aktualisiert ? "Vergessen — die Vorfrage erscheint wieder in Schritt 1." : "Vergessen — beim nächsten Abgleich wird wieder gefragt.");
+      if (d.abgleich_aktualisiert && W.abgleich) { try { const a = await holeJson("/api/abgleich/letzter"); W.abgleich = a; W.runId = wizRunId(a); wizSpeichern(); renderPlausi(a); } catch (e) { /* Anzeige folgt beim nächsten Laden */ } }
+    } catch (e) { toast(`Fehler: ${e.message}`); b.disabled = false; }
+  }));
 }
 
 // ------------------------------------------------------------------ Laden ----
@@ -415,7 +440,9 @@ function pruefeSchritt1() {
   $("wiz-btn-2").disabled = !(W.portalOk && W.abgleich && (!unbekannt || W.ack) && !offen);
 }
 // ---- Vorfragen: mögliche Zweitaccounts, die VOR der Import-Datei beantwortet werden müssen ----
-const ANTWORT_LABEL = { zweitaccount: "Zweitaccount", andere: "Andere Person", unklar: "Noch offen — wird Klärfall" };
+const ANTWORT_LABEL = { zweitaccount: "Zweitaccount", andere: "Andere Person", unklar: "Noch offen — Klärfall", elternteil: "Elternteil (Zweitaccount)", gleiche_person: "Dieselbe Person", ersatz: "Ersatz-Account" };
+const FALL_LABEL = { nachname: "gleicher Nachname", name: "gleicher Name, andere E-Mail", email: "gleiche E-Mail" };
+const MIT_FG = new Set(["zweitaccount", "elternteil", "gleiche_person", "ersatz"]);
 function renderVorfragen(d) {
   const el = $("wiz-1-vorfragen"); if (!el) return;
   const vf = d.vorfragen || [], ent = d.entscheide || {};
@@ -424,25 +451,19 @@ function renderVorfragen(d) {
   let html = "";
   if (vf.length) {
     html += `<div class="vf-box"><h3>${ic("alert", "sm")}Vorfragen, bevor die Import-Datei entsteht <span class="cnt">${vf.length}</span></h3>
-      <p class="hint">Diese Accounts haben keine FG-Nummer und stehen nicht in Fairgate — aber ein Mitglied hat denselben Nachnamen. Ist es ein Elternteil (Zweitaccount), schreibt der Import die FG-Nummer gleich mit, und die Einsätze zählen dem Kind. Ohne Antwort kommt der Account nicht in die Import-Datei.</p>
+      <p class="hint">Diese Portal-Accounts haben keine FG-Nummer, passen aber zu einem Mitglied in Fairgate — über Nachname, Name oder E-Mail. Deine Antwort entscheidet, was der Import schreibt; die Import-Datei entsteht danach neu. Ohne Antwort kommt der Account nicht in die Datei.</p>
       <ul class="vf">${vf.map((v) => {
         const id = v.helper_id, k = v.kandidaten || [];
-        const wahl = k.length > 1
-          ? `<select data-vf-fg="${id}" aria-label="Welches Kind">${k.map((x) => `<option value="${esc(x.fg)}">${esc(x.name)} (${esc(x.fg)})</option>`).join("")}</select>`
-          : `<b>${esc(k[0] ? k[0].name : "")}</b> (${esc(k[0] ? k[0].fg : "")})`;
+        const wahl = `<select data-vf-fg="${id}" aria-label="Welches Kind">${k.map((x) => `<option value="${esc(x.fg)}">${esc(x.name)} (${esc(x.fg)})</option>`).join("")}</select>`;
         return `<li data-vf="${id}">
           <div class="kopf"><b>${esc(v.name)}</b><span class="sub">${esc(v.email)}</span><span class="sub">${esc(v.einsatz_text)} · Zielwert ${esc(v.zielwert)} · Gruppen: ${esc((v.gruppen || []).join(", ") || "—")}</span>${plink(v.portal_url, "Account im Portal")}</div>
-          <div class="kand">${k.length > 1 ? "Mitglieder mit gleichem Nachnamen in Fairgate:" : "Mitglied mit gleichem Nachnamen in Fairgate:"}${k.map((x) => `<div>· <b>${esc(x.name)}</b> (${esc(x.fg)})${x.telefon ? ` · Telefon ${esc(x.telefon)}` : ""}${x.portal_account ? ` · Portal-Account ${esc(x.portal_account)}` : ""} ${plink(x.portal_url, "Im Portal")}</div>`).join("")}${v.bemerkung ? `<div>Bemerkung im Portal: «${esc(v.bemerkung)}» — die FG-Nummer müsste dann von Hand dazu</div>` : ""}</div>
-          <div class="antw">
-            <label><input type="radio" name="vf-${id}" value="zweitaccount">Zweitaccount von ${wahl}</label>
-            <label><input type="radio" name="vf-${id}" value="andere">Andere Person, nur Namensgleichheit</label>
-            <label><input type="radio" name="vf-${id}" value="unklar">Weiss nicht — später klären</label>
-          </div></li>`; }).join("")}</ul>
+          <div class="kand"><div class="frage">${esc(v.frage)}</div>${k.map((x) => `<div>· <b>${esc(x.name)}</b> (${esc(x.fg)})${x.telefon ? ` · Telefon ${esc(x.telefon)}` : ""}${x.portal_account ? ` · Portal-Account ${esc(x.portal_account)}` : ""} ${plink(x.portal_url, "Im Portal")}</div>`).join("")}${(v.fakten || []).map((f) => `<div class="sub">${esc(f)}</div>`).join("")}${v.bemerkung ? `<div class="sub">Bemerkung im Portal: «${esc(v.bemerkung)}» — die FG-Nummer müsste dann von Hand dazu, Zielwert und Gruppe setzt der Import</div>` : ""}</div>
+          <div class="antw">${(v.optionen || []).map((o) => `<label title="${esc(o.folge)}"><input type="radio" name="vf-${id}" value="${esc(o.antwort)}"><span>${esc(o.label)}${o.mit_fg ? ` ${k.length > 1 ? wahl : `<b>${esc(k[0] ? k[0].name : "")}</b>`}` : ""}<small>${esc(o.folge)}</small></span></label>`).join("")}</div></li>`; }).join("")}</ul>
       <div class="vf-foot"><span class="sub" id="vf-stand">0 von ${vf.length} beantwortet</span><button class="btn primary" id="vf-btn" disabled>${ic("check")}Antworten übernehmen</button></div>
       <p class="hint" style="margin:8px 0 0">«Andere Person» merkt sich das Cockpit dauerhaft — die Frage kommt nicht wieder. «Zweitaccount» erledigt sich mit dem Import von selbst.</p></div>`;
   }
   if (beantwortet.length) {
-    html += `<details class="vf-done"><summary>${beantwortet.length} Vorfragen beantwortet — ändern</summary><ul>${beantwortet.map(([id, e]) => `<li><b>${esc(e.name || `Account ${id}`)}</b><span class="sub">${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.fg ? ` von ${esc(e.fg)}` : ""}${e.gespeichert ? " · dauerhaft gespeichert" : ""}${e.zeit ? ` · ${esc(e.zeit)}` : ""}</span><button class="btn" data-vf-reset="${esc(id)}">Nochmals fragen</button></li>`).join("")}</ul></details>`;
+    html += `<details class="vf-done"><summary>${beantwortet.length} Vorfragen beantwortet — ändern</summary><ul>${beantwortet.map(([id, e]) => `<li><b>${esc(e.name || `Account ${id}`)}</b><span class="sub">${esc(FALL_LABEL[e.fall] || "")}${e.kandidaten ? ` wie ${esc(e.kandidaten)}` : ""} → ${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.fg && MIT_FG.has(e.antwort) ? ` (${esc(e.fg)})` : ""}${e.gespeichert ? " · dauerhaft gemerkt" : ""}</span><button class="btn" data-vf-reset="${esc(id)}">Nochmals fragen</button></li>`).join("")}</ul></details>`;
   }
   el.innerHTML = html;
   const stand = () => {
@@ -456,7 +477,7 @@ function renderVorfragen(d) {
     vf.forEach((v) => {
       const r = el.querySelector(`input[name="vf-${v.helper_id}"]:checked`); if (!r) return;
       const sel = el.querySelector(`select[data-vf-fg="${v.helper_id}"]`);
-      entscheide[v.helper_id] = { antwort: r.value, fg: r.value === "zweitaccount" ? (sel ? sel.value : v.kandidaten[0].fg) : "", name: v.name };
+      entscheide[v.helper_id] = { antwort: r.value, fg: MIT_FG.has(r.value) ? (sel ? sel.value : v.kandidaten[0].fg) : "", name: v.name, fall: v.fall, schluessel: v.schluessel, kandidaten: (v.kandidaten || []).map((x) => `${x.name} (${x.fg})`).join(", ") };
     });
     sendeEntscheide({ entscheide });
   });
@@ -537,7 +558,8 @@ function portalBefunde(d) {
       const ohne = acc.find((x) => x.name === name && !x.fg), mit = acc.find((x) => x.fg === fgs[0] && x.typ === "mitglied");
       // Wie der Server (Fall E): ein Namensvetter, der schon Freiwillige(r) mit Zielwert 0 ist, gilt als erledigt
       const erledigt = ohne && ohne.typ === "freiwillig" && !ohne.zielwert && !(ohne.gruppen || []).includes("Mitglied");
-      if (erledigt) return;
+      const gefragt = ohne && ((d.vorfragen || []).some((v) => v.helper_id === ohne.id) || (d.entscheide || {})[String(ohne.id)]);
+      if (erledigt || gefragt) return;                         // läuft über die Vorfragen in Schritt 1
       const fg = fgs[0] || "FG-…", mailOhne = ohne ? ohne.email : "?", mailMit = mit ? mit.email : "?";
       items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fg}, einer ohne. Zweitaccount oder Ersatz?`, wo: "Portal",
         fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)} — Link «Account ohne FG» rechts` : `Account ohne FG-Nummer: ${b}`,
@@ -613,8 +635,7 @@ function renderChecklist() {
   if (befunde.length) html += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie? Zweitaccount behalten, Ersatz-Account zusammenführen") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
   // Info: möglicher Zweitaccount — der Import stimmt so oder so, nur die FG-Nummer wäre ein Gewinn
   const hinweise = d.hinweise || [];
-  const mitEins = hinweise.filter((h) => h.einsaetze).length;
-  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} mögliche Elternteile werden Freiwillige — der Import erledigt das, ${mitEins ? `${mitEins} davon haben Einsätze: lohnt sich zu prüfen` : "keiner davon hat Einsätze"}</summary><p class="hint" style="margin:8px 0">Gleicher Nachname wie ein Mitglied, aber nirgends in Fairgate. Freiwillige(r) mit Zielwert 0 ist in jedem Fall richtig. Ist es ein Elternteil, bringt die FG-Nummer in der Bemerkung dem Kind die Einsätze — sonst nichts tun.</p><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
+  if (hinweise.length) html += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
   const abw = d.kontakt_abweichungen || [];
   if (abw.length) html += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
   $("wiz-3-liste").innerHTML = html;

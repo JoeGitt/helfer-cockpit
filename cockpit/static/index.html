@@ -365,8 +365,9 @@
   .vf>li{border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--surface2)}
   .vf .kopf{display:flex; flex-wrap:wrap; gap:6px 14px; align-items:baseline} .vf .kopf b{font-size:14px} .vf .kopf .sub{font-size:12px}
   .vf .kand{margin:6px 0 8px; font-size:12.5px; color:var(--ink2)} .vf .kand b{color:var(--ink)}
-  .vf .antw{display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px} .vf .antw label{display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:4px 8px; border-radius:8px; border:1px solid transparent}
-  .vf .antw label:has(input:checked){border-color:var(--border-strong); background:var(--surface)}
+  .vf .antw{display:grid; gap:6px; font-size:13.5px} .vf .antw label{display:flex; align-items:flex-start; gap:8px; cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface)} .vf .antw label input{margin-top:3px} .vf .antw label small{display:block; color:var(--muted); font-size:12px; margin-top:1px}
+  .vf .frage{font-size:13.5px; color:var(--ink); margin-bottom:4px} .vf .kand .sub{font-size:12px}
+  .vf .antw label:has(input:checked){border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink)}
   .vf .antw select{font:12.5px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:6px; padding:2px 6px}
   .vf-foot{display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap} .vf-foot .sub{flex:1}
   .vf-done{margin-top:10px} .vf-done summary{cursor:pointer; font-size:12.5px; color:var(--muted); font-weight:600}
@@ -672,6 +673,7 @@
       <div class="subtabs" role="tablist">
         <button role="tab" aria-selected="true" data-sub="s-regeln">Regeln</button>
         <button role="tab" aria-selected="false" data-sub="s-dq">Datenqualität <span class="sub" id="sub-n-dq"></span></button>
+        <button role="tab" aria-selected="false" data-sub="s-antworten">Gemerkte Antworten <span class="sub" id="sub-n-antworten"></span></button>
         <button role="tab" aria-selected="false" data-sub="s-log">Verlauf</button>
       </div>
 
@@ -695,6 +697,14 @@
           <div class="field"><div>Unbekannte mit Einsatz oder Anmeldung<div class="desc">Vereinsregel, Umteilung von Hand im Portal.</div></div><div class="fixed">→ Freiwillige</div></div>
         </div>
         <div class="wiz-actions"><button class="btn primary" id="btn-regeln-speichern"><svg class="ic"><use href="#i-check"/></svg>Regeln speichern</button></div>
+      </div>
+
+      <div class="subpanel" id="s-antworten">
+        <div class="card section">
+          <h2>Gemerkte Antworten</h2>
+          <p class="sub">Antworten «Andere Person» aus den Vorfragen des Abgleichs. Sie gelten dauerhaft — der betroffene Account wird nicht mehr gefragt, solange die Konstellation gleich bleibt (gleiche Mitglieder mit gleichem Nachnamen, Name oder E-Mail). «Vergessen» stellt die Frage beim nächsten Abgleich erneut.</p>
+          <div id="antworten-liste"></div>
+        </div>
       </div>
 
       <div class="subpanel" id="s-dq">
