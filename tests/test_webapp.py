@@ -535,3 +535,15 @@ def test_entscheide_ungueltige_antwort_400(tmp_path):
             assert e.code == 400
     finally:
         srv.shutdown()
+
+
+def test_dashboard_liefert_familie_mit_topf(tmp_path):
+    z = _zustand(tmp_path)
+    z.helpers = [_acc_json(1, "Elias", "Wenger", "e@example.ch", "FG-1"), _acc_json(2, "Sara", "Wenger", "s@example.ch", "FG-2"),
+                 {**_acc_json(3, "Petra", "Wenger", "p@example.ch", "FG-1, FG-2", gruppen=("Freiwillige",), ziel=0), "stateCache": {"requestedValue": 0, "plannedValue": 3}}]
+    z.assignments = []
+    d = baue_dashboard(z)
+    fam = [m for m in d["mitglieder"] if m["familie"]]
+    assert len(fam) == 2 and fam[0]["familie"]["name"] == "Familie Wenger" and fam[0]["familie"]["ist"] == 3 and fam[0]["familie"]["soll"] == 4
+    assert fam[0]["status_saison"] == "auf_kurs" and d["kennzahlen"]["familien"] == 1 and d["kennzahlen"]["ist_summe"] == 3
+    assert {a["id"] for a in fam[0]["familie"]["accounts"]} == {1, 2, 3}

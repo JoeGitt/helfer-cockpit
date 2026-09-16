@@ -13,6 +13,7 @@ _FG_MUSTER = re.compile(r"fg[\s\-–—_]*([0-9]{1,8})", re.IGNORECASE)
 
 
 def normalize_fg(text: str | None) -> tuple[str | None, bool]:
+    """Erste FG-Nummer der Bemerkung (= eigene Nummer) und ob sie nicht im Standardformat steht."""
     if not text:
         return (None, False)
     m = _FG_MUSTER.search(text)
@@ -21,6 +22,19 @@ def normalize_fg(text: str | None) -> tuple[str | None, bool]:
     fg = f"FG-{m.group(1)}"
     standard = m.start() == 0 and text[m.start():m.end()] == fg
     return (fg, not standard)
+
+
+def normalize_fgs(text: str | None) -> list:
+    """Alle FG-Nummern der Bemerkung in Reihenfolge, ohne Doppelte. Konvention (Spez 6.11):
+    die erste ist die eigene Nummer, weitere verbinden den Account mit einer Familie."""
+    if not text:
+        return []
+    gesehen, fgs = set(), []
+    for m in _FG_MUSTER.finditer(text):
+        fg = f"FG-{m.group(1)}"
+        if fg not in gesehen:
+            gesehen.add(fg); fgs.append(fg)
+    return fgs
 
 
 GRUPPE_MITGLIED = "Mitglied"
@@ -58,6 +72,7 @@ class Account:
     num_confirmed: int
     num_reserved: int
     num_unconfirmed: int
+    fgs: list = None            # alle FG-Nummern der Bemerkung (erste = fg)
     zusatz_email1: str = ""
     zusatz_email2: str = ""
 
@@ -107,6 +122,7 @@ def classify(helper):
         fg=fg,
         fg_nonstandard=nonstandard,
         typ=typ,
+        fgs=normalize_fgs(helper.get("adminRemarks")),
         zielwert=float(sc.get("requestedValue") or 0),
         ist_wert=float(sc.get("plannedValue") or 0),
         num_ok=int(sc.get("okAssignmentsNum") or 0),
@@ -120,6 +136,21 @@ def classify(helper):
 
 
 @dataclass
+class Familie:
+    """Mehrere Mitglieder, deren Accounts über gemeinsame FG-Nummern verbunden sind (Spez 6.11).
+    Topf-Regel: Soll = Summe der Solls, Ist = Einsätze aller Accounts der Familie, egal auf welchem."""
+    name: str
+    fgs: list           # FG-Nummern der Mitglieder (sortiert)
+    accounts: list      # alle Accounts der Familie, jeder genau einmal
+    soll: float
+    ist: float
+
+    @property
+    def schluessel(self):
+        return self.fgs[0]
+
+
+@dataclass
 class Mitglied:
     """Ein Mitglied mit aggregierten Daten über FG-Nummer."""
     fg: str
@@ -127,6 +158,7 @@ class Mitglied:
     soll: float
     ist: float
     soll_konflikt: bool = False
+    familie: Familie | None = None
 
     @property
     def mitglieds_account(self):
@@ -146,7 +178,8 @@ def build_mitglieder(accounts):
     """
     nach_fg = {}
     for a in accounts:
-        if a.fg:
+        # Zweitaccounts mit mehreren Nummern gehören der Familie, nicht einem einzelnen Mitglied
+        if a.fg and (a.typ == Typ.MITGLIED or len(a.fgs or []) <= 1):
             nach_fg.setdefault(a.fg, []).append(a)
     mitglieder = []
     for fg, gruppe in sorted(nach_fg.items()):
@@ -157,7 +190,52 @@ def build_mitglieder(accounts):
         ist = sum(a.ist_wert for a in gruppe)
         mitglieder.append(Mitglied(fg=fg, accounts=gruppe, soll=soll, ist=ist,
                                    soll_konflikt=len(haupt) > 1))
+    _familien_bilden(accounts, mitglieder)
     return mitglieder
+
+
+def _familien_bilden(accounts, mitglieder):
+    """Accounts mit mehreren FG-Nummern verbinden Mitglieder zu einer Familie (Union-Find über
+    die Nummern). Eine Familie braucht mindestens zwei Mitglieder mit Mitglieds-Account."""
+    eltern = {}
+    def wurzel(x):
+        while eltern.get(x, x) != x:
+            x = eltern[x]
+        return x
+    def verbinde(x, y):
+        rx, ry = wurzel(x), wurzel(y)
+        if rx != ry:
+            eltern[max(rx, ry)] = min(rx, ry)
+    for a in accounts:
+        for fg in (a.fgs or [])[1:]:
+            verbinde(a.fgs[0], fg)
+    nach_fg = {m.fg: m for m in mitglieder}
+    gruppen = {}
+    for m in mitglieder:
+        gruppen.setdefault(wurzel(m.fg), []).append(m)
+    for ms in gruppen.values():
+        if len(ms) < 2:
+            continue
+        fgs = sorted(m.fg for m in ms)
+        beteiligt, gesehen = [], set()
+        for a in accounts:
+            if a.id not in gesehen and any(wurzel(fg) == wurzel(fgs[0]) for fg in (a.fgs or [])):
+                gesehen.add(a.id); beteiligt.append(a)
+        nachnamen = []
+        for m in ms:
+            nn = m.mitglieds_account.nachname.strip()
+            if nn and nn not in nachnamen:
+                nachnamen.append(nn)
+        fam = Familie(name="Familie " + " / ".join(nachnamen), fgs=fgs, accounts=beteiligt,
+                      soll=sum(m.soll for m in ms), ist=sum(a.ist_wert for a in beteiligt))
+        for m in ms:
+            m.familie = fam
+    # Zweitaccount mit mehreren Nummern, aber ohne Familie (nur ein Mitglied vorhanden):
+    # zählt wie bisher beim ersten Mitglied
+    for a in accounts:
+        if a.fg and a.typ != Typ.MITGLIED and len(a.fgs or []) > 1 and a.fg in nach_fg and not nach_fg[a.fg].familie:
+            nach_fg[a.fg].accounts.append(a)
+            nach_fg[a.fg].ist += a.ist_wert
 
 
 def status(m, sicht, halbjahresziel):
@@ -167,11 +245,17 @@ def status(m, sicht, halbjahresziel):
     Rückgabe: "erfuellt" | "auf_kurs" | "saeumig"
     (Halbjahr-Sicht kennt kein "auf_kurs")
     """
-    ziel = m.soll if sicht == "saison" else float(halbjahresziel)
-    if m.ist >= ziel and ziel > 0:
+    if m.familie:                # Topf-Regel: die Familie ist gemeinsam erfüllt oder säumig
+        n = len(m.familie.fgs)
+        ziel = m.familie.soll if sicht == "saison" else float(halbjahresziel) * n
+        ist = m.familie.ist
+    else:
+        ziel = m.soll if sicht == "saison" else float(halbjahresziel)
+        ist = m.ist
+    if ist >= ziel and ziel > 0:
         return "erfuellt"
-    if sicht == "saison" and 0 < m.ist < ziel:
+    if sicht == "saison" and 0 < ist < ziel:
         return "auf_kurs"
-    if m.ist >= ziel:            # ziel 0 (z.B. Soll 0) gilt als erfüllt
+    if ist >= ziel:              # ziel 0 (z.B. Soll 0) gilt als erfüllt
         return "erfuellt"
     return "saeumig"

@@ -528,3 +528,34 @@ def test_vorfragen_nach_einsaetzen_sortiert_und_geschwister_als_kandidaten():
                    [ohne, mit, _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1"), _acc(4, "Eva", "Brunner", "eva@example.ch", "FG-4")], REGELN, HEUTE)
     assert [v["name"] for v in e.vorfragen] == ["Urs Brunner", "Reto Brunner"]
     assert [k["fg"] for k in e.vorfragen[0]["kandidaten"]] == ["FG-1", "FG-4"]
+
+# ---- Familien (Spez 6.11): Elternaccount für mehrere Kinder ----------------------------
+
+def test_vorfrage_nachname_bietet_familie_bei_mehreren_kindern_und_import_schreibt_alle_nummern():
+    eltern = _acc(1, "Petra", "Wenger", "familie@example.ch", None, gruppen=("Mitglied",), ziel=2.0)
+    kinder = [_acc(2, "Elias", "Wenger", "elias@example.ch", "FG-1"), _acc(3, "Sara", "Wenger", "sara@example.ch", "FG-2")]
+    kontakte = [_k_erw(1, "Elias", "Wenger", "elias@example.ch"), _k_erw(2, "Sara", "Wenger", "sara@example.ch")]
+    e = gleiche_ab(kontakte, [eltern] + kinder, REGELN, HEUTE)
+    v = e.vorfragen[0]
+    assert [o["antwort"] for o in v["optionen"]] == ["zweitaccount", "familie", "andere", "unklar"]
+    e = gleiche_ab(kontakte, [eltern] + kinder, REGELN, HEUTE, entscheide={"1": {"antwort": "familie", "schluessel": v["schluessel"]}})
+    z = next(z for z in e.korrekturen if z.vorname == "Petra")
+    assert z.bemerkungen == "FG-1, FG-2" and z.zielwert == "0" and "Freiwillige" in z.gruppe and "Familie" in z.grund
+    # nur ein Kind → keine Familien-Option
+    e = gleiche_ab(kontakte[:1], [eltern, kinder[0]], REGELN, HEUTE)
+    assert [o["antwort"] for o in e.vorfragen[0]["optionen"]] == ["zweitaccount", "andere", "unklar"]
+
+def test_c1_gleiche_familienmail_bei_zwei_kindern_mit_account_wird_familien_zweitaccount():
+    eltern = _acc(1, "Petra", "Wenger", "familie@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
+    kinder = [_acc(2, "Elias", "Wenger", "familie@example.ch", "FG-1"), _acc(3, "Sara", "Wenger", "familie@example.ch", "FG-2")]
+    kontakte = [_k_erw(1, "Elias", "Wenger", "familie@example.ch"), _k_erw(2, "Sara", "Wenger", "familie@example.ch")]
+    e = gleiche_ab(kontakte, [eltern] + kinder, REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.vorname == "Petra")
+    assert z.bemerkungen == "FG-1, FG-2" and "Familie" in z.grund and e.vorfragen == [] and e.neueintritte == []
+
+def test_familien_nummer_ohne_fairgate_kontakt_gibt_aufraeum_hinweis():
+    eltern = classify({"id": 1, "firstName": "Petra", "lastName": "Wenger", "email": "p@example.ch", "adminRemarks": "FG-1, FG-9",
+                       "groups": [{"id": 1, "name": "Freiwillige"}], "stateCache": {"requestedValue": 0, "plannedValue": 0}})
+    e = gleiche_ab([_k_erw(1, "Elias", "Wenger", "e@example.ch")], [eltern, _acc(2, "Elias", "Wenger", "e@example.ch", "FG-1")], REGELN, HEUTE)
+    assert any("FG-9" in h["titel"] and "nicht mehr in Fairgate" in h["titel"] for h in e.hinweise)
+    assert e.handarbeit == []

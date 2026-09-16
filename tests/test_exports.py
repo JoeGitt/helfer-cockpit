@@ -68,7 +68,7 @@ def test_gesamtexport_xlsx(tmp_path):
     ws_m = wb["Mitglieder"]
     assert [c.value for c in ws_m[1]] == [
         "FG-Nummer", "Name", "Gruppen", "Soll", "Ist",
-        "Status Saison", "Status Halbjahr", "Anzahl Accounts"]
+        "Status Saison", "Status Halbjahr", "Anzahl Accounts", "Familie", "Familie Soll", "Familie Ist"]
     zeile = [c.value for c in ws_m[2]]
     assert zeile[0] == "FG-1" and zeile[1] == "Lina Brunner" and zeile[2] == "Mitglied"
     assert zeile[3] == 2 and zeile[4] == 1
@@ -147,3 +147,18 @@ def test_import_begruendung_html_und_kategorien():
     html = import_begruendung_html(e, "import-2026-09-10.xlsx")
     assert "import-2026-09-10.xlsx" in html and "Karl Ohne" in html and "<td class='n'>3</td>" in html
     assert "Kein Mitglied in Fairgate → Freiwillige: 1" in html
+
+
+def test_saeumigen_csv_fasst_familie_zu_einer_zeile_zusammen(tmp_path):
+    from cockpit.model import classify, build_mitglieder
+    def h(id, vn, nn, remark, gruppen=("Mitglied",), ziel=2, ist=0):
+        return {"id": id, "firstName": vn, "lastName": nn, "email": f"{vn.lower()}@example.ch", "adminRemarks": remark,
+                "groups": [{"id": i, "name": g} for i, g in enumerate(gruppen)], "stateCache": {"requestedValue": ziel, "plannedValue": ist}}
+    ms = build_mitglieder([classify(x) for x in [
+        h(1, "Elias", "Wenger", "FG-1", ist=1), h(2, "Sara", "Wenger", "FG-2"),
+        h(3, "Petra", "Wenger", "FG-1, FG-2", gruppen=("Freiwillige",), ziel=0, ist=1), h(4, "Noah", "Keller", "FG-3")]])
+    pfad = tmp_path / "s.csv"
+    assert schreibe_saeumigen_csv(ms, "saison", 1, pfad) == 2          # Familie einmal + Noah
+    zeilen = list(csv.reader(pfad.open(encoding="utf-8-sig"), delimiter=";"))
+    fam = next(z for z in zeilen if len(z) > 1 and "Wenger" in z[1])
+    assert fam[0] == "Elias + Sara" and fam[2] == "petra@example.ch" and fam[3] == "FG-1, FG-2" and fam[4] == "4" and fam[5] == "2"

@@ -17,7 +17,8 @@ def run_checks(accounts, mitglieder, assignments=None):
     zweitaccount_ids = {a.id for a in accounts if a.typ == Typ.ZWEITACCOUNT}
 
     # D1: FG ohne passendes Mitglied
-    d1 = [a for a in accounts if a.fg and a.typ != Typ.MITGLIED and a.fg not in fg_mit_mitglied]
+    d1 = [a for a in accounts if a.fg and any(
+        f not in fg_mit_mitglied for f in (a.fgs or [a.fg]) if not (a.typ == Typ.MITGLIED and f == a.fg))]
     if d1:
         hinweise.append(Hinweis("D1", "kritisch",
             "FG-Nummer ohne passendes Mitglied — Tippfehler oder Austritt? Im Portal prüfen.",

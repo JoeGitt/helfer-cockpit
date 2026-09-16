@@ -3,7 +3,7 @@ import csv
 import html as html_mod
 from pathlib import Path
 import openpyxl
-from .model import status
+from .model import status, Typ
 
 IMPORT_SPALTEN = ["Vorname", "Nachname", "E-Mail", "Telefon", "Gruppe",
                   "zusätzliche E-Mail (1)", "zusätzliche E-Mail (2)", "Geburtsdatum",
@@ -26,7 +26,7 @@ def schreibe_import_xlsx(zeilen, pfad):
 
 
 MITGLIEDER_SPALTEN = ["FG-Nummer", "Name", "Gruppen", "Soll", "Ist",
-                      "Status Saison", "Status Halbjahr", "Anzahl Accounts"]
+                      "Status Saison", "Status Halbjahr", "Anzahl Accounts", "Familie", "Familie Soll", "Familie Ist"]
 ACCOUNTS_SPALTEN = ["FG-Nummer", "Name", "Typ", "Zielwert", "Ist-Wert", "Bemerkung"]
 ALLE_SPALTEN = ["ID", "Name", "Typ", "Gruppen", "FG-Nummer", "Geleistet (OK)",
                 "Nicht erschienen (NOK)", "Zugesagt", "Reserviert", "Ist-Wert", "Zielwert",
@@ -46,7 +46,8 @@ def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad, accounts=None):
         a0 = m.mitglieds_account
         ws_m.append([m.fg, a0.anzeigename, ", ".join(a0.gruppen), m.soll, m.ist,
                     status(m, "saison", halbjahresziel), status(m, "halbjahr", halbjahresziel),
-                    len(m.accounts)])
+                    len(m.accounts), m.familie.name if m.familie else "",
+                    m.familie.soll if m.familie else None, m.familie.ist if m.familie else None])
         for a in m.accounts:
             ws_a.append([m.fg, a.anzeigename, a.typ.value, a.zielwert, a.ist_wert, a.bemerkung])
     if accounts is not None:
@@ -61,19 +62,34 @@ def schreibe_gesamtexport_xlsx(mitglieder, halbjahresziel, pfad, accounts=None):
 
 
 def schreibe_saeumigen_csv(mitglieder, sicht, halbjahresziel, pfad):
-    saeumige = []
+    """Eine Zeile pro säumigem Mitglied; eine Familie (Topf) erscheint als eine Zeile mit allen
+    Kindern und der E-Mail des Elternaccounts, damit nur eine Erinnerung an die Familie geht."""
+    saeumige, familien_gesehen = [], set()
     for m in mitglieder:
-        s = status(m, sicht, halbjahresziel)
-        ziel = m.soll if sicht == "saison" else halbjahresziel
-        if s != "erfuellt" and m.ist < ziel:
-            saeumige.append(m)
+        if status(m, sicht, halbjahresziel) == "erfuellt":
+            continue
+        if m.familie:
+            if id(m.familie) in familien_gesehen:
+                continue
+            familien_gesehen.add(id(m.familie))
+        saeumige.append(m)
     with Path(pfad).open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow([f"Säumigen-Liste — Sicht: {_SICHT_NAME[sicht]}"])
         w.writerow(["Vorname", "Nachname", "E-Mail", "FG-Nummer", "Soll", "Ist"])
         for m in saeumige:
             a = m.mitglieds_account
-            w.writerow([a.vorname, a.nachname, a.email, m.fg, f"{m.soll:g}", f"{m.ist:g}"])
+            if m.familie:
+                fam = m.familie
+                kinder = [x for x in fam.accounts if x.typ == Typ.MITGLIED and x.fg in fam.fgs]
+                eltern = [x for x in fam.accounts if x.typ != Typ.MITGLIED]
+                n = len(fam.fgs)
+                soll = fam.soll if sicht == "saison" else halbjahresziel * n
+                w.writerow([" + ".join(x.vorname for x in kinder), fam.name.replace("Familie ", ""),
+                            (eltern[0].email if eltern else a.email), ", ".join(fam.fgs),
+                            f"{soll:g}", f"{fam.ist:g}"])
+            else:
+                w.writerow([a.vorname, a.nachname, a.email, m.fg, f"{m.soll:g}", f"{m.ist:g}"])
     return len(saeumige)
 
 

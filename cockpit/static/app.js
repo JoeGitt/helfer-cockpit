@@ -5,7 +5,7 @@
 // ------------------------------------------------------------------ Zustand ----
 const S = {
   sicht: "saison", daten: null, regeln: null,
-  k: { filter: "alle", suche: "", sort: { key: "status", dir: "asc" }, offen: new Set() },
+  k: { filter: "alle", suche: "", sort: { key: "status", dir: "asc" }, offen: new Set(), familieEntwurf: null },
   h: { filter: "alle", suche: "", sort: { key: "name", dir: "asc" } },
 };
 // Geführter Abgleich: step 0 = Start, 1 = Daten, 2 = Abarbeiten, 3 = Kontrolle, 4 = fertig. checks = abgehakte Punkte
@@ -163,7 +163,24 @@ function anwenden(d) {
 
 // ------------------------------------------------------------------ Kontingent ----
 function statusVon(m) { return S.sicht === "saison" ? m.status_saison : m.status_halbjahr; }
-function zielVon(m) { return S.sicht === "saison" ? m.soll : (S.regeln ? S.regeln.halbjahresziel : 1); }
+function zielVon(m) { const hz = S.regeln ? S.regeln.halbjahresziel : 1; return S.sicht === "saison" ? m.soll : (m.kinder ? hz * m.kinder.length : hz); }
+// Kontingent-Zeilen: ein Mitglied pro Zeile — eine Familie (Topf) als eine Zeile mit ihren Kindern
+function kontingentZeilen() {
+  const rows = [], fam = new Map();
+  (S.daten ? S.daten.mitglieder : []).forEach((m) => {
+    if (!m.familie) { rows.push(m); return; }
+    let f = fam.get(m.familie.schluessel);
+    if (!f) {
+      f = { fg: m.familie.schluessel, name: m.familie.name, gruppen: [], accounts: m.familie.accounts, soll: m.familie.soll, ist: m.familie.ist,
+            soll_konflikt: false, status_saison: m.status_saison, status_halbjahr: m.status_halbjahr, kinder: [], fgs: m.familie.fgs };
+      fam.set(m.familie.schluessel, f); rows.push(f);
+    }
+    f.kinder.push(m); m.gruppen.forEach((g) => { if (!f.gruppen.includes(g)) f.gruppen.push(g); });
+    if (m.soll_konflikt) f.soll_konflikt = true;
+  });
+  return rows;
+}
+function zeilenSchluessel(fg) { const r = kontingentZeilen().find((x) => x.fg === fg || (x.kinder && x.kinder.some((k) => k.fg === fg))); return r ? r.fg : fg; }
 function prozent(m) { const z = zielVon(m); return z > 0 ? Math.min(100, Math.round(m.ist / z * 100)) : 100; }
 function balken(m) {
   const s = statusVon(m); const cls = s === "erfuellt" ? "g" : s === "auf_kurs" ? "o" : "r";
@@ -186,16 +203,17 @@ function renderKennzahlen() {
   $("kpi-ohne").textContent = g ? fmt(k.ohne_einsatz) : "–";
   $("kpi-istsoll").innerHTML = g ? `${fmt(k.ist_summe)}<span class="of">/ ${fmt(k.soll_summe)}</span>` : "–";
   $("kpi-zweit").textContent = g ? fmt(k.zweitaccounts) : "–";
-  const z = { alle: n, erfuellt: 0, auf_kurs: 0, saeumig: 0, zweitaccount: 0 };
-  d.mitglieder.forEach((m) => { z[statusVon(m)]++; if (m.accounts.length > 1) z.zweitaccount++; });
+  const z = { alle: n, erfuellt: 0, auf_kurs: 0, saeumig: 0, zweitaccount: 0, familie: 0 };
+  d.mitglieder.forEach((m) => { z[statusVon(m)]++; if (m.accounts.length > 1 || m.familie) z.zweitaccount++; if (m.familie) z.familie++; });
   document.querySelectorAll("#chips-kontingent .chip").forEach((c) => { c.querySelector(".c").textContent = z[c.dataset.filter] ?? 0; });
 }
 function gefilterteMitglieder() {
   const f = S.k.filter, q = S.k.suche.trim().toLowerCase();
-  const liste = S.daten.mitglieder.filter((m) => {
+  const liste = kontingentZeilen().filter((m) => {
     if (f === "zweitaccount" && m.accounts.length < 2) return false;
-    if (f !== "alle" && f !== "zweitaccount" && statusVon(m) !== f) return false;
-    if (q && !(m.name.toLowerCase().includes(q) || m.fg.toLowerCase().includes(q) || m.accounts.some((a) => a.name.toLowerCase().includes(q)))) return false;
+    if (f === "familie" && !m.kinder) return false;
+    if (f !== "alle" && f !== "zweitaccount" && f !== "familie" && statusVon(m) !== f) return false;
+    if (q && !(m.name.toLowerCase().includes(q) || m.fg.toLowerCase().includes(q) || (m.fgs || []).some((x) => x.toLowerCase().includes(q)) || m.accounts.some((a) => a.name.toLowerCase().includes(q)))) return false;
     return true;
   });
   const { key, dir } = S.k.sort;
@@ -205,24 +223,26 @@ function gefilterteMitglieder() {
 }
 function nameAus(betroffen) { return String(betroffen).split(/ \(|: |«/)[0].trim(); }
 function hinweiseZu(m) {
-  const namen = new Set(m.accounts.map((a) => a.name));
-  return (S.daten.hinweise || []).filter((h) => h.betroffene.some((b) => b === m.fg || b.includes(m.fg) || namen.has(nameAus(b))));
+  const namen = new Set(m.accounts.map((a) => a.name)), fgs = m.kinder ? m.kinder.map((k) => k.fg) : [m.fg];
+  return (S.daten.hinweise || []).filter((h) => h.betroffene.some((b) => fgs.some((fg) => b === fg || b.includes(fg)) || namen.has(nameAus(b))));
 }
 function renderTabelleK() {
   const liste = gefilterteMitglieder(), body = $("tab-mitglieder-body"), n = S.daten.mitglieder.length;
   if (!n) { body.innerHTML = `<tr><td colspan="7"><div class="empty"><b>Noch keine Daten</b>Der Portal-Bestand wird beim Start automatisch geholt — sonst links «Neu abrufen».</div></td></tr>`; $("tfoot-kontingent").textContent = ""; return; }
   body.innerHTML = liste.length ? liste.map(zeileK).join("") : `<tr><td colspan="7"><div class="empty"><b>Kein Treffer</b>Filter oder Suchbegriff anpassen.</div></td></tr>`;
   const sortName = { name: "Name", gruppen: "Gruppen", accounts: "Accounts", soll: "Soll", ist: "Ist", status: "Status" }[S.k.sort.key];
-  $("tfoot-kontingent").innerHTML = `<span>${liste.length} von ${n} Mitgliedern</span><span>· sortiert nach ${sortName}</span><span style="margin-left:auto">Zusammenführung ausschliesslich über FG-Nummer</span>`;
+  const nFam = kontingentZeilen().filter((r) => r.kinder).length;
+  $("tfoot-kontingent").innerHTML = `<span>${liste.length} Zeilen · ${n} Mitglieder${nFam ? `, davon ${nFam} Familien` : ""}</span><span>· sortiert nach ${sortName}</span><span style="margin-left:auto">Zusammenführung ausschliesslich über FG-Nummer · Familie = Topf</span>`;
   markiereSort("tab-mitglieder", S.k.sort);
 }
 function zeileK(m) {
   const offen = S.k.offen.has(m.fg), mehrere = m.accounts.length > 1;
   const summanden = mehrere ? `<span class="sub">(${m.accounts.map((a) => fmt(a.ist)).join(" + ")})</span>` : "";
   const konflikt = m.soll_konflikt ? ` <span class="konflikt" title="Mehrere Mitglieds-Accounts mit dieser FG-Nummer — im Portal bereinigen">${ic("alert", "sm")}Konflikt</span>` : "";
+  const tag = m.kinder ? `<span class="fgtag fam">${ic("users", "sm")}${m.kinder.length} Mitglieder</span> <span class="fgtag">${esc(m.fgs.join(" · "))}</span>` : `<span class="fgtag">${esc(m.fg)}</span>`;
   return `
-    <tr class="row" data-fg="${esc(m.fg)}" role="button" tabindex="0" aria-expanded="${offen}">
-      <td><div class="cell-name">${ic("chev", "sm chev")}<div><span class="name">${esc(m.name)}</span> <span class="fgtag">${esc(m.fg)}</span></div></div></td>
+    <tr class="row ${m.kinder ? "fam" : ""}" data-fg="${esc(m.fg)}" role="button" tabindex="0" aria-expanded="${offen}">
+      <td><div class="cell-name">${ic("chev", "sm chev")}<div><span class="name">${esc(m.name)}</span> ${tag}</div></div></td>
       <td class="sub">${esc(m.gruppen.join(", "))}</td>
       <td class="r num">${m.accounts.length}</td>
       <td class="r num">${fmt(m.soll)}${konflikt}</td>
@@ -239,13 +259,35 @@ function ledger(m) {
     <td class="sub">${esc(a.bemerkung) || "—"}</td><td>${plink(a.portal_url)}</td></tr>`).join("");
   const hinweise = hinweiseZu(m);
   const dq = hinweise.length ? `<div class="dq">${hinweise.map((h) => `<div><span class="code ${SCHWERE[h.schweregrad].cls}">${esc(h.code)}</span><span>${esc(h.text)}</span></div>`).join("")}</div>` : "";
-  const sum = `Ist ${fmt(m.ist)} ${m.accounts.length > 1 ? "= " + m.accounts.map((a) => fmt(a.ist)).join(" + ") : ""} · Ziel ${fmt(zielVon(m))} (${S.sicht === "saison" ? "Saison-Soll" : "Halbjahresziel"})`;
-  return `<div class="ledger"><table><thead><tr><th>Account</th><th>Typ</th><th class="r">Ist</th><th class="r">Soll</th><th class="r" title="Geleistet / Zugesagt / Nicht erschienen">OK / Zug. / NOK</th><th>Bemerkung</th><th></th></tr></thead><tbody>${zeilen}</tbody></table><div class="sum num">${esc(sum)}</div>${dq}</div>`;
+  const sum = `${m.kinder ? "Familien-Topf: " : ""}Ist ${fmt(m.ist)} ${m.accounts.length > 1 ? "= " + m.accounts.map((a) => fmt(a.ist)).join(" + ") : ""} · Ziel ${fmt(zielVon(m))} (${S.sicht === "saison" ? "Saison-Soll" : "Halbjahresziel"}${m.kinder ? `, ${m.kinder.length} Kinder` : ""})`;
+  const kinder = m.kinder ? `<div class="kinder"><b>Mitglieder der Familie</b> — die Einsätze zählen in den gemeinsamen Topf, egal auf welchem Account: ${m.kinder.map((k) => `<span class="kind">${esc(k.name)} <span class="fgtag">${esc(k.fg)}</span> Soll ${fmt(k.soll)}, eigene ${fmt(k.ist)}</span>`).join(" ")}</div>` : "";
+  const famAktion = familieAktion(m);
+  return `<div class="ledger">${kinder}<table><thead><tr><th>Account</th><th>Typ</th><th class="r">Ist</th><th class="r">Soll</th><th class="r" title="Geleistet / Zugesagt / Nicht erschienen">OK / Zug. / NOK</th><th>Bemerkung</th><th></th></tr></thead><tbody>${zeilen}</tbody></table><div class="sum num">${esc(sum)}</div>${dq}${famAktion}</div>`;
+}
+// ---- Familie zusammenführen (Spez 6.11): Anleitung mit fertigem Bemerkungstext, Wahrheit bleibt im Portal ----
+function familieAktion(m) {
+  const e = S.k.familieEntwurf;
+  const aktiv = e && e.basis === m.fg;
+  if (!aktiv) return `<div class="famact"><button class="btn" data-fam-start="${esc(m.fg)}">${ic("users")}${m.kinder ? "Familie erweitern …" : "Zu Familie zusammenführen …"}</button><span class="sub">Geschwister zu einem Topf verbinden: Soll = Summe, Einsätze zählen egal auf welchem Account.</span></div>`;
+  const basisFgs = m.kinder ? m.kinder.map((k) => k.fg) : [m.fg];
+  const alleZeilen = kontingentZeilen();
+  const kandidaten = alleZeilen.filter((r) => r.fg !== m.fg && !e.weitere.includes(r.fg));
+  const gewaehlt = e.weitere.map((fg) => alleZeilen.find((r) => r.fg === fg)).filter(Boolean);
+  const fgsGesamt = [...basisFgs, ...gewaehlt.flatMap((r) => r.kinder ? r.kinder.map((k) => k.fg) : [r.fg])];
+  // Wohin die Nummern gehören: alle Zweitaccounts der Beteiligten; gibt es keinen, an den Mitglieds-Account der Basis
+  const beteiligte = [m, ...gewaehlt];
+  const zweit = beteiligte.flatMap((r) => r.accounts.filter((a) => a.typ !== "mitglied"));
+  const ziele = zweit.length ? zweit : [m.accounts.find((a) => a.typ === "mitglied")].filter(Boolean);
+  const anleitung = gewaehlt.length ? `<ol class="howto compact">${ziele.map((a, i) => { const eigene = (a.fgs || []).filter((x) => !fgsGesamt.includes(x)); const text = [...(a.fgs && a.fgs.length ? [a.fgs[0]] : []), ...fgsGesamt.filter((x) => !(a.fgs || []).length || x !== a.fgs[0]), ...eigene].filter((x, k, arr) => arr.indexOf(x) === k).join(", "); return `<li><span class="n">${i + 1}</span><div><b>${esc(a.name)} (${TYP_LABEL[a.typ] || a.typ})</b><span>Bemerkung im Portal auf <b class="num">${esc(text)}</b> setzen${a.bemerkung ? ` (heute: «${esc(a.bemerkung)}»)` : ""} <button class="btn" data-copy="${esc(text)}">${ic("file", "sm")}Kopieren</button> ${plink(a.portal_url, "Im Portal öffnen")}</span></div></li>`; }).join("")}<li><span class="n">${ziele.length + 1}</span><div><b>Links «Neu abrufen»</b><span>Das Cockpit erkennt die Familie an den gemeinsamen Nummern — kein lokaler Zustand, jeder Admin sieht sie im Portal.</span></div></li></ol>` : `<p class="hint">Mitglied wählen, das zur Familie gehört.</p>`;
+  return `<div class="famact offen"><div class="famhead"><b>${ic("users")}Familie: ${esc(m.kinder ? m.name : m.name)}${gewaehlt.length ? " + " + gewaehlt.map((r) => esc(r.name)).join(" + ") : ""}</b><button class="btn ghost" data-fam-abbruch="1">Abbrechen</button></div>
+    <div class="famwahl"><label class="search">${ic("search", "sm")}<input type="search" list="fam-liste" data-fam-suche="${esc(m.fg)}" placeholder="Weiteres Mitglied: Name oder FG-Nummer" aria-label="Mitglied für die Familie suchen"></label><datalist id="fam-liste">${kandidaten.slice(0, 400).map((r) => `<option value="${esc(r.fg)}">${esc(r.name)}</option>`).join("")}</datalist>${gewaehlt.map((r) => `<span class="chip" aria-pressed="true">${esc(r.name)} <span class="c">${esc(r.fg)}</span> <button class="x" data-fam-weg="${esc(r.fg)}" aria-label="Entfernen">×</button></span>`).join("")}</div>
+    ${anleitung}</div>`;
 }
 function toggleZeile(fg) { if (S.k.offen.has(fg)) S.k.offen.delete(fg); else S.k.offen.add(fg); renderTabelleK(); }
 function springeZuMitglied(fg) {
   S.k.filter = "alle"; S.k.suche = ""; $("suche-kontingent").value = "";
   document.querySelectorAll("#chips-kontingent .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.filter === "alle")));
+  fg = zeilenSchluessel(fg);
   S.k.offen.add(fg); zeigePanel("p-kontingent"); renderTabelleK();
   const tr = document.querySelector(`#tab-mitglieder-body tr.row[data-fg="${CSS.escape(fg)}"]`);
   if (tr) { tr.scrollIntoView({ block: "center" }); tr.classList.add("flash"); tr.focus(); }
@@ -789,6 +831,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   }));
   document.querySelectorAll(".subtabs [data-sub]").forEach((b) => b.addEventListener("click", () => zeigeSub(b.dataset.sub)));
   $("btn-abrufen").addEventListener("click", () => abrufen(false));
+  $("tab-mitglieder-body").addEventListener("click", (e) => {
+    const start = e.target.closest("[data-fam-start]"); if (start) { e.stopPropagation(); S.k.familieEntwurf = { basis: start.dataset.famStart, weitere: [] }; renderTabelleK(); return; }
+    if (e.target.closest("[data-fam-abbruch]")) { e.stopPropagation(); S.k.familieEntwurf = null; renderTabelleK(); return; }
+    const weg = e.target.closest("[data-fam-weg]"); if (weg) { e.stopPropagation(); S.k.familieEntwurf.weitere = S.k.familieEntwurf.weitere.filter((x) => x !== weg.dataset.famWeg); renderTabelleK(); return; }
+    const copy = e.target.closest("[data-copy]"); if (copy) { e.stopPropagation(); navigator.clipboard && navigator.clipboard.writeText(copy.dataset.copy).then(() => toast(`«${copy.dataset.copy}» kopiert.`)); return; }
+    if (e.target.closest(".famact")) e.stopPropagation();
+  }, true);
+  $("tab-mitglieder-body").addEventListener("change", (e) => {
+    const inp = e.target.closest("[data-fam-suche]"); if (!inp || !S.k.familieEntwurf) return;
+    const mm = inp.value.match(/(\d{1,8})/); const fg = mm ? `FG-${mm[1]}` : inp.value.trim();
+    const r = kontingentZeilen().find((x) => x.fg === fg || x.name.toLowerCase() === inp.value.trim().toLowerCase());
+    if (!r || r.fg === S.k.familieEntwurf.basis) { toast("Kein Mitglied mit dieser Nummer gefunden."); return; }
+    if (!S.k.familieEntwurf.weitere.includes(r.fg)) S.k.familieEntwurf.weitere.push(r.fg);
+    renderTabelleK();
+  });
   document.querySelectorAll(".seg [data-sicht]").forEach((b) => b.addEventListener("click", () => setSicht(b.dataset.sicht)));
   document.querySelectorAll(".seg.ansicht [data-ansicht]").forEach((b) => b.addEventListener("click", () => { zeigePanel(b.dataset.ansicht); if (b.dataset.ansicht === "p-helfende") renderTabelleH(); else renderTabelleK(); }));
 

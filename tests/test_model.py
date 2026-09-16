@@ -80,3 +80,56 @@ def test_status_saison_und_halbjahr():
     assert status(m["FG-3105"], "saison", 1) == "saeumig"
     assert status(m["FG-1083"], "halbjahr", 1) == "erfuellt"
     assert status(m["FG-3105"], "halbjahr", 1) == "saeumig"
+
+
+# ---- Familien (Spez 6.11, 16.09.2026): mehrere FG-Nummern in einer Bemerkung = Topf ----
+from cockpit.model import normalize_fgs, Familie
+
+def _h(id, vn, nn, remark, gruppen=("Mitglied",), ziel=2, ist=0):
+    return {"id": id, "firstName": vn, "lastName": nn, "email": f"{vn.lower()}@example.ch", "adminRemarks": remark,
+            "groups": [{"id": i, "name": g} for i, g in enumerate(gruppen)],
+            "stateCache": {"requestedValue": ziel, "plannedValue": ist}}
+
+def test_normalize_fgs_alle_nummern_in_reihenfolge_ohne_doppelte():
+    assert normalize_fgs("FG-7065, FG-7096") == ["FG-7065", "FG-7096"]
+    assert normalize_fgs("fg 7096 / FG-7065 / fg7096") == ["FG-7096", "FG-7065"]
+    assert normalize_fgs("") == [] and normalize_fgs(None) == []
+
+def test_elternaccount_mit_zwei_nummern_bildet_familie_mit_topf():
+    accounts = [classify(h) for h in [
+        _h(1, "Elias", "Wenger", "FG-1", ziel=2, ist=1),
+        _h(2, "Sara", "Wenger", "FG-2", ziel=2, ist=0),
+        _h(3, "Petra", "Wenger", "FG-1, FG-2", gruppen=("Freiwillige",), ziel=0, ist=2),
+        _h(4, "Noah", "Keller", "FG-3", ziel=2, ist=2)]]
+    ms = {m.fg: m for m in build_mitglieder(accounts)}
+    fam = ms["FG-1"].familie
+    assert fam is not None and fam is ms["FG-2"].familie and ms["FG-3"].familie is None
+    assert fam.name == "Familie Wenger" and fam.fgs == ["FG-1", "FG-2"]
+    assert fam.soll == 4 and fam.ist == 3                    # 1 + 0 + 2 (Elternaccount einmal gezählt)
+    assert sorted(a.id for a in fam.accounts) == [1, 2, 3]
+    assert ms["FG-1"].ist == 1 and ms["FG-2"].ist == 0        # eigene Accounts bleiben sichtbar
+    assert status(ms["FG-1"], "saison", 1) == "auf_kurs" == status(ms["FG-2"], "saison", 1)
+    assert status(ms["FG-2"], "halbjahr", 1) == "erfuellt"    # Topf 3 ≥ 2 × Halbjahresziel
+
+def test_geschwister_ohne_elternaccount_ueber_zweite_nummer_beim_kind():
+    accounts = [classify(h) for h in [
+        _h(1, "Elias", "Wenger", "FG-1, FG-2", ziel=2, ist=4),
+        _h(2, "Sara", "Wenger", "FG-2", ziel=2, ist=0)]]
+    ms = {m.fg: m for m in build_mitglieder(accounts)}
+    assert ms["FG-1"].fg == "FG-1" and accounts[0].typ.value == "mitglied"   # erste Nummer = eigene
+    assert ms["FG-1"].familie.ist == 4 and ms["FG-1"].familie.soll == 4
+    assert status(ms["FG-2"], "saison", 1) == "erfuellt"
+
+def test_familie_mit_verschiedenen_nachnamen_und_nummer_ohne_mitglied():
+    accounts = [classify(h) for h in [
+        _h(1, "Elias", "Wenger", "FG-1"), _h(2, "Lea", "Meier", "FG-2"),
+        _h(3, "Petra", "Wenger", "FG-1, FG-2, FG-9", gruppen=("Freiwillige",), ziel=0, ist=1)]]
+    ms = {m.fg: m for m in build_mitglieder(accounts)}
+    assert ms["FG-1"].familie.name == "Familie Wenger / Meier" and ms["FG-1"].familie.fgs == ["FG-1", "FG-2"]
+
+def test_zweitaccount_mit_zwei_nummern_ohne_zweites_mitglied_zaehlt_beim_ersten():
+    accounts = [classify(h) for h in [
+        _h(1, "Elias", "Wenger", "FG-1", ziel=2, ist=0),
+        _h(3, "Petra", "Wenger", "FG-1, FG-2", gruppen=("Freiwillige",), ziel=0, ist=2)]]
+    ms = {m.fg: m for m in build_mitglieder(accounts)}
+    assert ms["FG-1"].familie is None and ms["FG-1"].ist == 2 and len(ms["FG-1"].accounts) == 2

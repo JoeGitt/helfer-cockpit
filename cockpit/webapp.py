@@ -22,7 +22,7 @@ STATIC_RESOLVED = STATIC.resolve()
 SICHTEN = ("saison", "halbjahr")
 
 
-ANTWORTEN = ("zweitaccount", "andere", "unklar", "elternteil", "gleiche_person", "ersatz")
+ANTWORTEN = ("zweitaccount", "familie", "andere", "unklar", "elternteil", "gleiche_person", "ersatz")
 
 
 @dataclass
@@ -209,16 +209,19 @@ def baue_dashboard(z):
     m_json = []
     for m in mitglieder:
         a0 = m.mitglieds_account
+        acc_json = lambda a: {"id": a.id, "name": a.anzeigename, "typ": a.typ.value, "email": a.email,
+                              "soll": a.zielwert, "ist": a.ist_wert, "bemerkung": a.bemerkung, "fgs": a.fgs or [],
+                              "num_ok": a.num_ok, "num_nok": a.num_nok,
+                              "num_confirmed": a.num_confirmed, "portal_url": portal_url(z, a.id)}
+        fam = m.familie
         m_json.append({
             "fg": m.fg, "name": a0.anzeigename, "gruppen": a0.gruppen,
             "soll": m.soll, "ist": m.ist, "soll_konflikt": m.soll_konflikt,
             "status_saison": status(m, "saison", regeln.halbjahresziel),
             "status_halbjahr": status(m, "halbjahr", regeln.halbjahresziel),
-            "accounts": [{"id": a.id, "name": a.anzeigename, "typ": a.typ.value,
-                          "soll": a.zielwert, "ist": a.ist_wert, "bemerkung": a.bemerkung,
-                          "num_ok": a.num_ok, "num_nok": a.num_nok,
-                          "num_confirmed": a.num_confirmed, "portal_url": portal_url(z, a.id)}
-                         for a in m.accounts]})
+            "accounts": [acc_json(a) for a in m.accounts],
+            "familie": ({"name": fam.name, "schluessel": fam.schluessel, "fgs": fam.fgs, "soll": fam.soll, "ist": fam.ist,
+                         "accounts": [acc_json(a) for a in fam.accounts]} if fam else None)})
     # Erfüllung nach Fairgate-Kategorie: nur wenn ein Export geladen wurde (Spez 6.2)
     kategorie_erfuellung = []
     if z.fairgate_kategorien:
@@ -236,8 +239,10 @@ def baue_dashboard(z):
         "mitglieder": len(mitglieder),
         "erfuellt": sum(1 for m in m_json if m["status_saison"] == "erfuellt"),
         "halbjahr_erreicht": sum(1 for m in m_json if m["status_halbjahr"] == "erfuellt"),
-        "ohne_einsatz": sum(1 for m in m_json if m["ist"] == 0),
-        "ist_summe": sum(m["ist"] for m in m_json),
+        "ohne_einsatz": sum(1 for m in m_json if (m["familie"]["ist"] if m["familie"] else m["ist"]) == 0),
+        "ist_summe": (sum(m["ist"] for m in m_json if not m["familie"])
+                      + sum(f.ist for f in {id(m.familie): m.familie for m in mitglieder if m.familie}.values())),
+        "familien": len({id(m.familie) for m in mitglieder if m.familie}),
         "soll_summe": sum(m["soll"] for m in m_json),
         "zweitaccounts": sum(1 for a in accounts if a.typ == Typ.ZWEITACCOUNT),
         "hinweise": len(hinweise),

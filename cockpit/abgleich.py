@@ -179,8 +179,9 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
 
     def fg_nachtrag(a, fg0, zweitaccount, grund, fakten):
         """FG-Nummer per Import in die Bemerkung schreiben — wenn sie leer ist. Sonst setzt der
-        Import nur Zielwert und Gruppe, und die FG-Nummer wird ein Klärfall von Hand."""
-        regel = regeln.fuer_kategorie(pflichtig[fg0].kategorie)
+        Import nur Zielwert und Gruppe, und die FG-Nummer wird ein Klärfall von Hand.
+        fg0 darf mehrere Nummern enthalten («FG-1, FG-2» = Zweitaccount einer Familie)."""
+        regel = regeln.fuer_kategorie(pflichtig[fg0.split(",")[0].strip()].kategorie)
         if zweitaccount:
             zielwert = "0" if a.zielwert != 0 else ""
             gruppe = _zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_MITGLIED, GRUPPE_UNBEKANNTE))
@@ -213,6 +214,8 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
             return None                                   # alte Einträge kannten nur Nachnamen-Fälle
         if ent["antwort"] in ("zweitaccount", "elternteil", "gleiche_person", "ersatz") and ent.get("fg") not in fgs:
             return None
+        if ent["antwort"] == "familie" and len(fgs) < 2:
+            return None
         return ent["antwort"]
 
     def kand(fg):
@@ -237,6 +240,13 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
     # ---- Phase 1: jeder Portal-Account → Soll-Zustand → Massnahme ----------------------
     for a in accounts:
         hat_mitglied = GRUPPE_MITGLIED in a.gruppen
+        # Familien-Nummern, die nicht (mehr) in Fairgate stehen → Bemerkung von Hand bereinigen
+        if a.fg and a.fg in pflichtig and len(a.fgs or []) > 1:
+            weg = [f for f in a.fgs[1:] if f not in pflichtig and f not in nicht_pflichtig_fgs and f not in unbekannt_fgs]
+            if weg:
+                e.hinweise.append(info(f"{a.anzeigename}: Familien-Nummer {', '.join(weg)} steht nicht mehr in Fairgate",
+                                       [f"Bemerkung im Portal: «{a.bemerkung}»", "Der Topf der Familie rechnet nur mit Mitgliedern, die in Fairgate stehen",
+                                        f"Aufräumen: im Portal die Nummer {', '.join(weg)} aus der Bemerkung entfernen (der Import ändert belegte Bemerkungen nicht)"], a))
         if a.fg and a.fg in pflichtig:
             k = pflichtig[a.fg]
             regel = regeln.fuer_kategorie(k.kategorie)
@@ -293,6 +303,12 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                     teile.append("Keine offenen Einsätze.")
                 e.handarbeit.append(HandarbeitsFall("austritt", a.anzeigename, a.fg, " ".join(teile),
                                                     helper_id=a.id))
+            elif any(f in pflichtig for f in (a.fgs or [])[1:]):
+                aktiv = [f for f in a.fgs[1:] if f in pflichtig]
+                e.hinweise.append(info(f"{a.anzeigename}: Familien-Nummer {a.fg} steht nicht mehr in Fairgate, {', '.join(aktiv)} schon",
+                                       [f"Bemerkung im Portal: «{a.bemerkung}»",
+                                        f"Aufräumen: im Portal {a.fg} aus der Bemerkung entfernen, damit {aktiv[0]} die erste Nummer ist"], a))
+                korrektur(a, "Zweitaccount einer Familie: Zielwert 0", zielwert="0" if a.zielwert != 0 else "")
             else:
                 korrektur(a, "Zweitaccount eines ausgetretenen Mitglieds: Zielwert 0",
                           zielwert="0" if a.zielwert != 0 else "")
@@ -324,10 +340,18 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                     # gleiche Familien-E-Mail) ist eindeutig ein Zweitaccount, z. B. ein Elternteil.
                     fg0 = mit_account[0]
                     haupt = portal_nach_fg[fg0]
-                    fg_nachtrag(a, fg0, True, f"Zweitaccount von {fg0} («{haupt.anzeigename}», gleiche E-Mail): FG-Nummer eintragen, Zielwert 0, Gruppe «Freiwillige»",
-                                [f"Portal-Account «{a.anzeigename}» verwendet dieselbe E-Mail wie Fairgate-Kontakt {fg0} («{haupt.anzeigename}»)",
-                                 f"«{haupt.anzeigename}» hat bereits einen eigenen Mitglieds-Account — «{a.anzeigename}» ist also ein Zweitaccount (z. B. Elternteil)"])
-                    fg_zugeordnet.add(fg0)
+                    if len(mit_account) > 1:
+                        # Geschwister mit eigenen Accounts und gemeinsamer E-Mail → Zweitaccount der Familie
+                        kinder = ", ".join(f"«{portal_nach_fg[f].anzeigename}»" for f in mit_account)
+                        fg_nachtrag(a, ", ".join(mit_account), True,
+                                    f"Zweitaccount der Familie {', '.join(mit_account)} ({kinder}, gleiche E-Mail): alle FG-Nummern eintragen, Zielwert 0, Gruppe «Freiwillige» — Einsätze zählen in den Familien-Topf",
+                                    [f"Portal-Account «{a.anzeigename}» verwendet dieselbe E-Mail wie die Fairgate-Kontakte {', '.join(mit_account)} ({kinder})",
+                                     "Alle haben schon einen eigenen Mitglieds-Account — dieser Account ist der Elternaccount der Familie"])
+                    else:
+                        fg_nachtrag(a, fg0, True, f"Zweitaccount von {fg0} («{haupt.anzeigename}», gleiche E-Mail): FG-Nummer eintragen, Zielwert 0, Gruppe «Freiwillige»",
+                                    [f"Portal-Account «{a.anzeigename}» verwendet dieselbe E-Mail wie Fairgate-Kontakt {fg0} («{haupt.anzeigename}»)",
+                                     f"«{haupt.anzeigename}» hat bereits einen eigenen Mitglieds-Account — «{a.anzeigename}» ist also ein Zweitaccount (z. B. Elternteil)"])
+                    fg_zugeordnet.update(mit_account)
                 else:
                     # C2 (Vorfrage): der Fairgate-Kontakt hat noch keinen Account — Elternteil oder
                     # dieselbe Person, anders geschrieben? Beides kann der Import umsetzen.
@@ -444,8 +468,12 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                 # Gleicher Nachname wie ein Mitglied → erst fragen (Zweitaccount?), dann importieren.
                 familie = sorted(nachname_fgs.get(a.nachname.strip().lower(), set()) & fg_mit_mitgliedsaccount)
                 schluessel = "nachname:" + ",".join(familie)
-                antwort = antwort_zu(ent, schluessel, ("zweitaccount", "andere", "unklar"), familie) if familie else "andere"
-                if antwort == "zweitaccount":
+                antwort = antwort_zu(ent, schluessel, ("zweitaccount", "familie", "andere", "unklar"), familie) if familie else "andere"
+                if antwort == "familie":
+                    kinder = ", ".join(f"«{pflichtig[f].vorname} {pflichtig[f].nachname}»" for f in familie)
+                    fg_nachtrag(a, ", ".join(familie), True,
+                                f"Zweitaccount der Familie {', '.join(familie)} ({kinder}, deine Antwort): alle FG-Nummern eintragen, Zielwert 0, Gruppe «Freiwillige» — Einsätze zählen in den Familien-Topf", [])
+                elif antwort == "zweitaccount":
                     fg0 = ent["fg"]
                     kind = pflichtig[fg0]
                     fg_nachtrag(a, fg0, True, f"Zweitaccount von {fg0} («{kind.vorname} {kind.nachname}», deine Antwort): FG-Nummer eintragen, Zielwert 0, Gruppe «Freiwillige»", [])
@@ -467,7 +495,9 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                     vorfrage(a, "nachname", schluessel, familie,
                              "Keine FG-Nummer, nirgends in Fairgate — aber " + ("ein Mitglied hat" if len(familie) == 1 else f"{len(familie)} Mitglieder haben") + " denselben Nachnamen",
                              [],
-                             [("zweitaccount", "Zweitaccount (Elternteil) von", "Import: FG-Nummer des Kinds, Zielwert 0, Gruppe «Freiwillige» — die Einsätze zählen dem Kind", True),
+                             [("zweitaccount", "Zweitaccount (Elternteil) von", "Import: FG-Nummer des Kinds, Zielwert 0, Gruppe «Freiwillige» — die Einsätze zählen dem Kind", True)]
+                             + ([("familie", f"Elternaccount für alle {len(familie)} Kinder (Familie)", f"Import: {', '.join(familie)} in die Bemerkung, Zielwert 0, Gruppe «Freiwillige» — die Familie ist ein Topf: Soll = Summe der Kinder, Einsätze zählen egal auf welchem Account")] if len(familie) > 1 else [])
+                             + [
                               ("andere", "Andere Person, nur Namensgleichheit", "Import: Freiwillige(r), Zielwert 0 — wird dauerhaft gemerkt"),
                               ("unklar", "Weiss nicht — später klären", "Keine Import-Zeile, Klärfall in Schritt 2")])
             # sonst: echte(r) Freiwillige(r) — nichts zu tun
