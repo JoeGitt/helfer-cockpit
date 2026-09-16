@@ -7,3 +7,4 @@ Ausgabe/
 .DS_Store
 venv/
 tests/fixtures/pseudo/
+dist/

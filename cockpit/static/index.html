@@ -261,6 +261,9 @@
   .form-table input[type=text],.form-table input[type=number],.field input{background:var(--bg); border:1px solid var(--border-strong); border-radius:6px; padding:6px 9px; color:var(--ink); font:inherit; width:100%}
   .form-table input[type=number]{width:80px}
   .form-table input[type=checkbox]{width:16px; height:16px; accent-color:var(--ink)}
+  .einr-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0} .einr-row input[type=text], .einr-row input[type=password]{flex:1; min-width:260px; font:13.5px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:8px; padding:8px 10px}
+  .stand .version{display:block; font-size:10.5px; color:var(--muted); margin-top:2px}
+  .upd{border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:10px; background:var(--surface2)} .upd b{display:block; font-size:14px; margin-bottom:4px} .upd pre{white-space:pre-wrap; font:12.5px var(--body); color:var(--ink2); margin:6px 0 10px}
   .field{display:grid; grid-template-columns:1fr 120px; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:13.5px}
   .field:last-child{border-bottom:none}
   .field .desc{font-size:12px; color:var(--muted)}
@@ -464,7 +467,7 @@
     </nav>
     <div class="spacer"></div>
     <div class="railfoot">
-      <div class="stand">Helfertool-API<b id="stand-anzeige">Noch nicht abgerufen</b></div>
+      <div class="stand">Helfertool-API<b id="stand-anzeige">Noch nicht abgerufen</b><span class="version" id="rail-version"></span></div>
       <div class="row">
         <button class="railbtn" id="btn-abrufen" aria-label="Daten neu abrufen"><svg class="ic sm"><use href="#i-refresh"/></svg><span>Neu abrufen</span></button>
         <button class="railbtn" id="btn-einstellungen" data-panel="p-einstellungen" aria-label="Einstellungen"><svg class="ic sm"><use href="#i-sliders"/></svg><span>Einstellungen</span></button>
@@ -699,6 +702,24 @@
     </section>
 
     <!-- ================= EINSTELLUNGEN ================= -->
+    <!-- ================= EINRICHTUNG (erster Start) ================= -->
+    <section class="panel" id="p-einrichtung" aria-labelledby="h-einrichtung">
+      <div class="pagehead"><h1 id="h-einrichtung">Einrichtung</h1><span class="meta">Zwei Angaben, dann ist das Cockpit bereit. Beides bleibt auf diesem Computer bzw. im Vereinsordner — nie im Programmpaket.</span></div>
+      <div class="card wiz-card">
+        <h2>1 · Datenordner</h2>
+        <p class="intro">Hier liegen Regeln, gemerkte Antworten, der Verlauf und der Ordner «Ausgabe» mit Import- und Handarbeitsdateien. Beim Verein ein Ordner auf dem Netzlaufwerk, damit alle am gleichen Stand arbeiten.</p>
+        <div class="einr-row"><input type="text" id="einr-ordner" placeholder="z. B. \\server\verein\HelferCockpit" aria-label="Datenordner"><button class="btn" id="einr-ordner-dialog">Ordner wählen …</button><button class="btn primary" id="einr-ordner-speichern">Prüfen und speichern</button></div>
+        <div class="statusline" id="einr-ordner-status" hidden></div>
+      </div>
+      <div class="card wiz-card">
+        <h2>2 · API-Key des Helferportals</h2>
+        <p class="intro">Den Key erstellt ein Portal-Admin unter Organisation → API (nur Lesen nötig). Er wird im Schlüsselbund dieses Windows- bzw. Mac-Benutzers gespeichert — nicht im Datenordner, nicht im Paket. Jede Person, die das Cockpit benutzt, gibt ihn einmal ein.</p>
+        <div class="einr-row"><input type="password" id="einr-key" placeholder="API-Key einfügen" aria-label="API-Key" autocomplete="off"><button class="btn primary" id="einr-key-speichern">Key speichern</button></div>
+        <div class="statusline" id="einr-key-status" hidden></div>
+      </div>
+      <div class="wiz-actions"><span class="spacer"></span><button class="btn primary" id="einr-fertig" disabled>Cockpit starten<svg class="ic"><use href="#i-chev"/></svg></button></div>
+    </section>
+
     <section class="panel" id="p-einstellungen" aria-labelledby="h-einstellungen">
       <div class="pagehead">
         <h1 id="h-einstellungen">Einstellungen</h1>
@@ -709,6 +730,28 @@
         <button role="tab" aria-selected="false" data-sub="s-dq">Datenqualität <span class="sub" id="sub-n-dq"></span></button>
         <button role="tab" aria-selected="false" data-sub="s-antworten">Gemerkte Antworten <span class="sub" id="sub-n-antworten"></span></button>
         <button role="tab" aria-selected="false" data-sub="s-log">Verlauf</button>
+        <button role="tab" aria-selected="false" data-sub="s-update">Über &amp; Update</button>
+      </div>
+
+      <div class="subpanel" id="s-update">
+        <div class="card section">
+          <h2>Version und Update</h2>
+          <p class="sub" id="upd-version">Helfer-Cockpit</p>
+          <div class="einr-row"><button class="btn" id="upd-pruefen"><svg class="ic"><use href="#i-refresh"/></svg>Nach Update suchen</button><span class="sub" id="upd-stand"></span></div>
+          <div id="upd-ergebnis"></div>
+        </div>
+        <div class="card section">
+          <h2>Datenordner</h2>
+          <p class="sub">Regeln, gemerkte Antworten, Verlauf und Ausgabe. Ein Wechsel übernimmt vorhandene Dateien, wenn der neue Ordner leer ist.</p>
+          <div class="einr-row"><input type="text" id="set-ordner" aria-label="Datenordner"><button class="btn" id="set-ordner-dialog">Ordner wählen …</button><button class="btn" id="set-ordner-speichern">Wechseln</button></div>
+          <div class="statusline" id="set-ordner-status" hidden></div>
+        </div>
+        <div class="card section">
+          <h2>API-Key</h2>
+          <p class="sub" id="set-key-stand"></p>
+          <div class="einr-row"><input type="password" id="set-key" placeholder="Neuen API-Key einfügen" aria-label="API-Key" autocomplete="off"><button class="btn" id="set-key-speichern">Key ersetzen</button><button class="btn ghost" id="set-key-loeschen">Key entfernen</button></div>
+          <div class="statusline" id="set-key-status" hidden></div>
+        </div>
       </div>
 
       <div class="subpanel active" id="s-regeln">

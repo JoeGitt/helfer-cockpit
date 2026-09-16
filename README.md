@@ -1,48 +1,51 @@
 # Helfer-Cockpit 2
 
-Lokales Verwaltungstool für Einsatzdaten der Handball-Gruppe.
+Lokales Werkzeug der Pfadi Winterthur Handball: Kontingent-Erfüllung der Mitglieder aus dem
+Helfereinsatz-Portal und geführter Mitglieder-Abgleich Fairgate → Portal. Läuft auf dem eigenen
+Rechner, Oberfläche im Browser. Keine Personendaten im Programmpaket und in diesem Repository.
 
-## Voraussetzung
+## Installation auf Windows (ohne Admin-Rechte)
 
-Python 3.10 oder neuer muss installiert sein:
-1. Downloaden von [python.org](https://www.python.org/downloads/) (Windows: «Add to PATH» ankreuzen)
-2. Terminal/Eingabeaufforderung öffnen, einmalig eingeben:
+1. Diese Datei herunterladen und doppelklicken: **[Installieren.bat](packaging/Installieren.bat)**
+   (Rechtsklick → «Ziel speichern unter»). Alternativ in PowerShell:
    ```
-   pip install openpyxl keyring
+   irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit-2/main/packaging/install.ps1 | iex
    ```
+   Der Installer lädt das neueste Paket von GitHub nach `%LOCALAPPDATA%\HelferCockpit\app`, legt die
+   Verknüpfung «Helfer-Cockpit» auf den Desktop und ins Startmenü und startet das Cockpit.
+   Windows SmartScreen kann beim ersten Start nachfragen («Weitere Informationen» → «Trotzdem ausführen»).
+2. Im Browser öffnet sich die **Einrichtung**:
+   - **Datenordner** wählen — beim Verein ein Ordner auf dem Netzlaufwerk (z. B. `\\server\verein\HelferCockpit`).
+     Dort liegen Regeln, gemerkte Antworten, Verlauf und der Ordner «Ausgabe». Alle arbeiten damit am gleichen Stand.
+   - **API-Key** des Helferportals einfügen (Organisation → API, Leserecht genügt). Der Key wird im
+     Schlüsselbund des angemeldeten Windows-Benutzers gespeichert — nie im Datenordner, nie im Paket.
+     Jede Person, die das Cockpit benutzt, gibt ihn einmal ein.
+3. «Cockpit starten». Danach genügt die Desktop-Verknüpfung.
 
-## Start
+Das Paket bringt eine eigene Python-Kopie mit; es muss nichts vorinstalliert sein. Meldungen ohne
+Konsole landen in `%USERPROFILE%\.helfer-cockpit\cockpit.log`; «Helfer-Cockpit Konsole.bat» startet mit
+sichtbarem Fenster zur Fehlersuche.
 
-**Windows:** Doppelklick auf `Helfer-Cockpit starten.bat`  
-**macOS:** Doppelklick auf `Helfer-Cockpit starten.command`
+## Update
 
-Das Dashboard öffnet sich automatisch im Browser. Das Fenster offen lassen (Schliessen beendet das Cockpit).
+Einstellungen → **Über & Update** → «Nach Update suchen». Gefunden wird die neueste Version auf GitHub;
+ohne Internet der Ordner `Updates` im Datenordner (dort ein `HelferCockpit-<Version>-windows.zip`
+ablegen). «Jetzt aktualisieren» lädt das Paket, beendet das Cockpit, tauscht den Programmordner und
+startet neu. Datenordner und API-Key bleiben unberührt.
 
-## Erststart
+Neue Version veröffentlichen (Entwickler): `VERSION` in `cockpit/version.py` erhöhen, committen,
+Tag `v<Version>` pushen — GitHub Actions baut das Windows-Paket und hängt es ans Release.
+Lokal bauen: `python3 packaging/build_release.py` → `dist/HelferCockpit-<Version>-windows.zip`.
 
-Beim ersten Start wird der API-Key abgefragt. Dieser wird sicher im Betriebssystem gespeichert.  
-*Der Key ist read-only und kann jederzeit im Portal widerrufen werden.*
+## macOS / Entwicklung
 
-## Optionen
-
-Zum Testen ohne API-Key (mit Beispieldaten):
 ```
-python3 start.py --demo
+pip install openpyxl keyring pytest
+python3 start.py              # normal, Einrichtung beim ersten Start im Browser
+python3 start.py --demo       # fiktive Daten, ohne API-Key
+python3 start.py --pseudo     # pseudonymisierter Bestand (tests/fixtures/pseudo, nicht im Repo)
+python3 start.py --key-reset  # gespeicherten Key verwerfen
+python3 -m pytest -q
 ```
-
-Um den API-Key neu zu erfassen:
-```
-python3 start.py --key-reset
-```
-
-## Ausgabedateien
-
-Exportierte Reports und Listen werden im Ordner `Ausgabe/` gespeichert.
-
-## Saisonabschluss – Wichtig!
-
-**Reihenfolge beachten:**
-1. Alle Reports exportieren (`Ausgabe/`)
-2. Danach: Events in der Quelle zurücksetzen
-
-*Umgekehrte Reihenfolge führt zu Datenverlust.*
+Doppelklick: `Helfer-Cockpit starten.command`. Konfiguration pro Benutzer in `~/.helfer-cockpit/`
+(Standort des Datenordners, Log). Spezifikation: `../SPEZIFIKATION-helfer-cockpit-2.md`.

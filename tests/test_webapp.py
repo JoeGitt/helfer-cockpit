@@ -547,3 +547,34 @@ def test_dashboard_liefert_familie_mit_topf(tmp_path):
     assert len(fam) == 2 and fam[0]["familie"]["name"] == "Familie Wenger" and fam[0]["familie"]["ist"] == 3 and fam[0]["familie"]["soll"] == 4
     assert fam[0]["status_saison"] == "auf_kurs" and d["kennzahlen"]["familien"] == 1 and d["kennzahlen"]["ist_summe"] == 3
     assert {a["id"] for a in fam[0]["familie"]["accounts"]} == {1, 2, 3}
+
+
+def test_einrichtung_endpoints(tmp_path, monkeypatch):
+    from cockpit import standort as st
+    monkeypatch.setattr(st, "KONFIG", tmp_path / "konfig"); monkeypatch.setattr(st, "STANDORT_DATEI", tmp_path / "konfig" / "standort.json")
+    z = _zustand(tmp_path); z.konfig_dir = tmp_path / "konfig"
+    gespeichert = {}
+    z.key_setzen = lambda k: gespeichert.__setitem__("key", k) or setattr(z, "api_client_factory", lambda: None)
+    srv = starte_server(z, port=0); threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with urllib.request.urlopen(url + "/api/einrichtung") as r:
+            d = json.loads(r.read())
+        assert d["eingerichtet"] is False and d["key_vorhanden"] is False and d["version"]
+        d = _post_json(url + "/api/einrichtung", {"daten_ordner": str(tmp_path / "netz" / "HelferCockpit")})
+        assert d["eingerichtet"] and (tmp_path / "netz" / "HelferCockpit" / "Ausgabe").is_dir()
+        assert json.loads((tmp_path / "konfig" / "standort.json").read_text())["daten_ordner"].endswith("HelferCockpit")
+        try:
+            _post_json(url + "/api/einrichtung", {"daten_ordner": "kein/absoluter/pfad"}); assert False
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+        d = _post_json(url + "/api/einrichtung/key", {"key": "geheim"})
+        assert d["key_vorhanden"] and gespeichert["key"] == "geheim"
+        with urllib.request.urlopen(url + "/api/update/pruefen") as r:
+            u = json.loads(r.read())
+        assert "aktuell" in u and "neu" in u
+        # Regeln landen jetzt im Datenordner
+        _post_json(url + "/api/regeln", {"kategorien": [], "altersgrenze": 16, "halbjahresziel": 1, "email_abweichung": "info"})
+        assert (tmp_path / "netz" / "HelferCockpit" / "regeln.json").exists()
+    finally:
+        srv.shutdown()

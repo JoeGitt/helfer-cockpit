@@ -82,6 +82,78 @@ function zeigeSub(id) {
   document.querySelectorAll(".subtabs [data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === id)));
   document.querySelectorAll(".subpanel").forEach((p) => p.classList.toggle("active", p.id === id));
   if (id === "s-antworten") ladeAntworten();
+  if (id === "s-update") ladeUpdateTab();
+}
+// ---- Einrichtung (erster Start) und Über & Update ----
+let EINR = null;
+async function ladeEinrichtung() {
+  try { EINR = await holeJson("/api/einrichtung"); } catch (e) { EINR = null; }
+  if (EINR) $("rail-version").textContent = `Version ${EINR.version}${EINR.entwicklung ? " · Entwicklung" : ""}`;
+  return EINR;
+}
+function statusZeile(id, cls, text) { const el = $(id); el.hidden = !text; el.className = `statusline ${cls}`; el.innerHTML = text ? `${ic(cls === "ok" ? "check" : cls === "err" ? "alert" : "refresh")}<span>${text}</span>` : ""; }
+function renderEinrichtung() {
+  const d = EINR; if (!d) return;
+  $("einr-ordner").value = d.daten_ordner || d.vorschlag || "";
+  $("einr-ordner-dialog").hidden = !d.dialog_moeglich;
+  statusZeile("einr-ordner-status", d.eingerichtet ? "ok" : "", d.eingerichtet ? `Datenordner: <b>${esc(d.daten_ordner)}</b>` : "");
+  statusZeile("einr-key-status", d.key_vorhanden ? "ok" : "", d.key_vorhanden ? (d.demo ? "Demo-Modus — kein Key nötig." : "API-Key ist im Schlüsselbund gespeichert.") : "");
+  $("einr-fertig").disabled = !(d.eingerichtet && d.key_vorhanden);
+}
+async function ordnerSpeichern(inputId, statusId) {
+  const pfad = $(inputId).value.trim();
+  statusZeile(statusId, "busy", "Ordner wird geprüft …");
+  try {
+    const d = await holeJson("/api/einrichtung", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ daten_ordner: pfad }) });
+    EINR = d; $("rail-version").textContent = `Version ${d.version}`;
+    statusZeile(statusId, "ok", `Gespeichert: <b>${esc(d.daten_ordner)}</b>${d.uebernommen && d.uebernommen.length ? ` · ${d.uebernommen.length} Dateien übernommen` : ""}`);
+    renderEinrichtung(); renderUeber();
+    ladeRegeln(); ladeProtokoll();
+  } catch (e) { statusZeile(statusId, "err", esc(e.message)); }
+}
+async function ordnerDialog(inputId) {
+  try { const d = await holeJson("/api/einrichtung/ordner-dialog", { method: "POST", body: "{}" }); if (d.pfad) $(inputId).value = d.pfad; } catch (e) { toast(`Dialog nicht möglich: ${e.message}`); }
+}
+async function keySpeichern(inputId, statusId, loeschen = false) {
+  const key = loeschen ? "" : $(inputId).value.trim();
+  if (!loeschen && !key) { statusZeile(statusId, "err", "Bitte den Key einfügen."); return; }
+  statusZeile(statusId, "busy", loeschen ? "Key wird entfernt …" : "Key wird gespeichert und geprüft …");
+  try {
+    const d = await holeJson("/api/einrichtung/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(loeschen ? { loeschen: true } : { key }) });
+    EINR = d; $(inputId).value = "";
+    if (!loeschen) {
+      const ok = await abrufen(true);
+      statusZeile(statusId, ok ? "ok" : "err", ok ? `Key gespeichert — Portal antwortet (${S.daten.alle_accounts.length} Accounts).` : `Key gespeichert, aber das Portal antwortet nicht: ${esc(letzterAbrufFehler || "unbekannter Fehler")}. Key prüfen.`);
+    } else statusZeile(statusId, "ok", "Key entfernt — beim nächsten Start wird er neu abgefragt.");
+    renderEinrichtung(); renderUeber();
+  } catch (e) { statusZeile(statusId, "err", esc(e.message)); }
+}
+function renderUeber() {
+  const d = EINR; if (!d) return;
+  $("upd-version").innerHTML = `<b>Helfer-Cockpit ${esc(d.version)}</b>${d.entwicklung ? " · Entwicklungs-Checkout (Update per git)" : ""} · Konfiguration: ${esc(d.konfig_dir)}`;
+  $("set-ordner").value = d.daten_ordner || ""; $("set-ordner-dialog").hidden = !d.dialog_moeglich;
+  $("set-key-stand").textContent = d.demo ? "Demo-Modus — kein Key in Verwendung." : (d.key_vorhanden ? "Ein API-Key ist im Schlüsselbund dieses Benutzers gespeichert." : "Kein API-Key gespeichert.");
+}
+async function ladeUpdateTab() {
+  if (!EINR) await ladeEinrichtung();
+  renderUeber();
+}
+async function updatePruefen() {
+  $("upd-stand").textContent = "Suche …"; $("upd-ergebnis").innerHTML = "";
+  try {
+    const d = await holeJson("/api/update/pruefen");
+    $("upd-stand").textContent = `Aktuell: ${d.aktuell} · GitHub ${d.github_erreichbar ? "erreichbar" : "nicht erreichbar"}${d.ordner_geprueft ? " · Ordner «Updates» geprüft" : ""}`;
+    if (!d.neu) { $("upd-ergebnis").innerHTML = `<div class="upd"><b>Du hast die neueste Version.</b></div>`; return; }
+    if (d.entwicklung) { $("upd-ergebnis").innerHTML = `<div class="upd"><b>Version ${esc(d.neu.version)} verfügbar</b> — dies ist ein Entwicklungs-Checkout: Update mit <code>git pull</code>.</div>`; return; }
+    $("upd-ergebnis").innerHTML = `<div class="upd"><b>Version ${esc(d.neu.version)} verfügbar</b> (${d.neu.quelle === "github" ? "von GitHub" : "aus dem Ordner «Updates»"})${d.neu.notizen ? `<pre>${esc(d.neu.notizen)}</pre>` : ""}<button class="btn primary" id="upd-jetzt">${ic("download")}Jetzt aktualisieren</button><span class="sub" style="margin-left:10px">Das Cockpit lädt das Paket, beendet sich, ersetzt sich und startet neu — der Browser öffnet sich dann von selbst.</span></div>`;
+    $("upd-jetzt").addEventListener("click", async () => {
+      $("upd-jetzt").disabled = true; $("upd-jetzt").innerHTML = ic("refresh", "spin") + "Wird geladen …";
+      try {
+        await holeJson("/api/update/installieren", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kandidat: d.neu }) });
+        $("upd-ergebnis").innerHTML = `<div class="upd"><b>Update läuft.</b> Das Cockpit startet gleich neu und öffnet sich in einem neuen Fenster — dieses Fenster kannst du schliessen.</div>`;
+      } catch (e) { $("upd-ergebnis").innerHTML = `<div class="upd"><b>Update fehlgeschlagen</b><pre>${esc(e.message)}</pre></div>`; }
+    });
+  } catch (e) { $("upd-stand").textContent = `Prüfung nicht möglich: ${e.message}`; }
 }
 // ---- Einstellungen · Gemerkte Antworten («Andere Person» aus den Vorfragen) ----
 async function ladeAntworten() {
@@ -910,6 +982,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Start: Regeln, Stand, Verlauf — jeder Schritt fängt seine Fehler selbst. Danach automatisch
   // den Portal-Bestand holen, wenn ein API-Key vorhanden ist (kein Knopf nötig).
+  $("einr-ordner-dialog").addEventListener("click", () => ordnerDialog("einr-ordner"));
+  $("einr-ordner-speichern").addEventListener("click", () => ordnerSpeichern("einr-ordner", "einr-ordner-status"));
+  $("einr-key-speichern").addEventListener("click", () => keySpeichern("einr-key", "einr-key-status"));
+  $("einr-key").addEventListener("keydown", (e) => { if (e.key === "Enter") keySpeichern("einr-key", "einr-key-status"); });
+  $("einr-fertig").addEventListener("click", async () => { zeigePanel("p-abgleich"); await ladeStand(); if (S.daten && S.daten.api_verfuegbar && !geladen()) await abrufen(true); });
+  $("set-ordner-dialog").addEventListener("click", () => ordnerDialog("set-ordner"));
+  $("set-ordner-speichern").addEventListener("click", () => ordnerSpeichern("set-ordner", "set-ordner-status"));
+  $("set-key-speichern").addEventListener("click", () => keySpeichern("set-key", "set-key-status"));
+  $("set-key-loeschen").addEventListener("click", () => keySpeichern("set-key", "set-key-status", true));
+  $("upd-pruefen").addEventListener("click", updatePruefen);
+  await ladeEinrichtung();
+  if (EINR && !(EINR.eingerichtet && EINR.key_vorhanden)) { renderEinrichtung(); renderUeber(); zeigePanel("p-einrichtung"); await ladeRegeln(); await ladeStand(); await ladeProtokoll(); return; }
+  renderUeber();
   const gespeichert = wizLaden();
   wizZeige(0);
   await ladeRegeln();

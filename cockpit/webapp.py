@@ -2,6 +2,8 @@
 import datetime
 import io
 import json
+import sys
+import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +18,9 @@ from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsl
                       import_zeilen_mit_grund, import_begruendung_html)
 from .settings import lade_regeln, lade_regeln_mit_fehler, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
+from . import standort as standort_mod
+from . import updater
+from .version import VERSION
 
 STATIC = Path(__file__).parent / "static"
 STATIC_RESOLVED = STATIC.resolve()
@@ -42,6 +47,27 @@ class Zustand:
     letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
     letztes_ergebnis: dict = None      # vollständige Antwort des letzten Abgleichs (für Seiten-Neuladen)
     entscheide: dict = None            # Antworten auf Vorfragen dieser Sitzung {helper_id: {antwort, fg}}
+    daten_ordner: Path = None          # gemeinsamer Datenordner (Netzlaufwerk), Spez 6.12
+    key_setzen: object = None          # Callback(key) → speichert im Schlüsselbund, setzt api_client_factory
+    key_loeschen: object = None        # Callback() → Key aus dem Schlüsselbund entfernen
+    demo: bool = False
+    konfig_dir: Path = None            # ~/.helfer-cockpit (Standort-Datei, Update-Downloads)
+    beenden: object = None             # Callback() → Server nach Update-Start stoppen
+
+    def setze_daten_ordner(self, pfad):
+        """Alle gemeinsamen Dateien in den Datenordner zeigen lassen."""
+        p = Path(pfad)
+        self.daten_ordner = p
+        self.regeln_pfad = p / "regeln.json"
+        self.protokoll_pfad = p / "protokoll.jsonl"
+        self.ausgabe_dir = p / "Ausgabe"
+
+    def einrichtung_json(self):
+        return {"version": VERSION, "daten_ordner": str(self.daten_ordner) if self.daten_ordner else "",
+                "eingerichtet": bool(self.daten_ordner), "key_vorhanden": self.api_client_factory is not None or self.demo,
+                "demo": self.demo, "plattform": sys.platform, "dialog_moeglich": sys.platform in ("win32", "darwin"),
+                "vorschlag": str(self.daten_ordner or (self.konfig_dir or standort_mod.KONFIG)),
+                "entwicklung": updater.ist_entwicklung(), "konfig_dir": str(self.konfig_dir or standort_mod.KONFIG)}
 
     def entscheide_pfad(self):
         return self.ausgabe_dir / "entscheide.json"
@@ -297,6 +323,11 @@ def starte_server(zustand, port=0):
             if pfad == "/api/regeln":
                 from dataclasses import asdict
                 return self._json(asdict(lade_regeln(zustand.regeln_pfad)))
+            if pfad == "/api/einrichtung":
+                return self._json(zustand.einrichtung_json())
+            if pfad == "/api/update/pruefen":
+                updates_dir = zustand.daten_ordner / "Updates" if zustand.daten_ordner else None
+                return self._json(updater.pruefe(updates_dir))
             if pfad == "/api/entscheide":
                 _, gespeichert = zustand.lade_entscheide()
                 return self._json({"entscheide": gespeichert})
@@ -390,6 +421,50 @@ def starte_server(zustand, port=0):
                     return self._json(abgleich_ausfuehren(zustand, kontakte))
                 except (FalscheDatei, ValueError) as e:
                     return self._json({"fehler": str(e)}, 400)
+            if u.path == "/api/einrichtung/ordner-dialog":
+                pfad = standort_mod.ordner_dialog(str(zustand.daten_ordner) if zustand.daten_ordner else None)
+                return self._json({"pfad": pfad or ""})
+            if u.path == "/api/einrichtung":
+                daten = json.loads(self._body() or b"{}")
+                ok, meldung = standort_mod.pruefe_ordner(daten.get("daten_ordner", ""))
+                if not ok:
+                    return self._json({"fehler": meldung}, 400)
+                alt_ausgabe = zustand.ausgabe_dir if zustand.ausgabe_dir and not zustand.daten_ordner else None
+                uebernommen = standort_mod.uebernehme_alte_dateien(meldung, alt_ausgabe=alt_ausgabe)
+                zustand.setze_daten_ordner(meldung)
+                standort_mod.speichere_standort(meldung)
+                protokoll.logge(zustand.protokoll_pfad, "einrichtung", {"uebernommen": len(uebernommen)})
+                return self._json({**zustand.einrichtung_json(), "uebernommen": uebernommen})
+            if u.path == "/api/einrichtung/key":
+                daten = json.loads(self._body() or b"{}")
+                key = (daten.get("key") or "").strip()
+                if daten.get("loeschen"):
+                    if zustand.key_loeschen:
+                        zustand.key_loeschen()
+                    zustand.api_client_factory = None
+                    return self._json(zustand.einrichtung_json())
+                if not key:
+                    return self._json({"fehler": "Kein Key eingegeben."}, 400)
+                if not zustand.key_setzen:
+                    return self._json({"fehler": "In diesem Modus (Demo) wird kein API-Key verwendet."}, 400)
+                try:
+                    zustand.key_setzen(key)
+                except Exception as e:
+                    return self._json({"fehler": f"Key konnte nicht gespeichert werden: {e}"}, 500)
+                return self._json(zustand.einrichtung_json())
+            if u.path == "/api/update/installieren":
+                daten = json.loads(self._body() or b"{}")
+                kandidat = daten.get("kandidat")
+                if not kandidat or kandidat.get("quelle") not in ("github", "ordner"):
+                    return self._json({"fehler": "Kein gültiges Update angegeben."}, 400)
+                try:
+                    updater.installieren(kandidat, zustand.konfig_dir or standort_mod.KONFIG)
+                except Exception as e:
+                    return self._json({"fehler": str(e)}, 500)
+                protokoll.logge(zustand.protokoll_pfad, "update", {"version": kandidat.get("version"), "quelle": kandidat.get("quelle")})
+                if zustand.beenden:
+                    threading.Timer(1.0, zustand.beenden).start()
+                return self._json({"ok": True, "hinweis": "Das Cockpit beendet sich, wird ersetzt und startet neu."})
             if u.path == "/api/entscheide/loeschen":
                 daten = json.loads(self._body() or b"{}")
                 ids = daten.get("helper_ids") or []
