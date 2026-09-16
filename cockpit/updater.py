@@ -124,22 +124,33 @@ def entpacken(zip_pfad, ziel_neu):
 
 
 def tausch_skript_schreiben(app, neu, pid, starter):
-    """Skript, das nach dem Ende dieses Prozesses den Ordner tauscht und neu startet."""
+    """Skript, das nach dem Ende dieses Prozesses den Ordner tauscht und neu startet.
+    Windows: PowerShell ohne Fenster (Wait-Process) — eine Batch-Schleife mit tasklist/find öffnet
+    ohne Konsole eigene Fenster und bleibt hängen."""
     app, neu = Path(app), Path(neu)
     alt = app.with_name(app.name + ".alt")
+    log = app.parent / "update.log"
     if sys.platform == "win32":
-        pfad = app.parent / "update.bat"
+        pfad = app.parent / "update.ps1"
         pfad.write_text("\r\n".join([
-            "@echo off",
-            f":warten",
-            f'tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL && (timeout /t 1 /nobreak >NUL & goto warten)',
-            f'if exist "{alt}" rmdir /s /q "{alt}"',
-            f'move "{app}" "{alt}" >NUL',
-            f'move "{neu}" "{app}" >NUL',
-            f'if exist "{alt}" rmdir /s /q "{alt}"',
-            f'start "" "{starter}"',
-            'del "%~f0"',
-        ]) + "\r\n", encoding="utf-8")
+            "$ErrorActionPreference = 'Continue'",
+            f"$log = '{log}'",
+            "function Log($t) { Add-Content -Path $log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $t) }",
+            f"Log 'Update: warte auf Prozess {pid}'",
+            f"Wait-Process -Id {pid} -ErrorAction SilentlyContinue",
+            "Start-Sleep -Seconds 1",
+            f"if (Test-Path '{alt}') {{ Remove-Item -Recurse -Force '{alt}' }}",
+            "$ok = $false",
+            "for ($i = 0; $i -lt 30; $i++) {",
+            f"  try {{ Move-Item -Path '{app}' -Destination '{alt}' -ErrorAction Stop; $ok = $true; break }} catch {{ Start-Sleep -Seconds 1 }}",
+            "}",
+            f"if (-not $ok) {{ Log 'Programmordner ist noch belegt — Update abgebrochen, alte Version bleibt.'; exit 1 }}",
+            f"Move-Item -Path '{neu}' -Destination '{app}'",
+            f"Remove-Item -Recurse -Force '{alt}' -ErrorAction SilentlyContinue",
+            "Log 'Update: Ordner getauscht, starte neu'",
+            f"Start-Process -FilePath '{starter}' -WorkingDirectory '{app}'",
+            "Remove-Item -Force $PSCommandPath -ErrorAction SilentlyContinue",
+        ]) + "\r\n", encoding="utf-8-sig")
         return pfad
     pfad = app.parent / "update.sh"
     pfad.write_text("\n".join([
@@ -176,11 +187,11 @@ def installieren(kandidat, konfig_dir, updates_dir=None, repo=GITHUB_REPO):
     starter_final = app / starter.name
     skript = tausch_skript_schreiben(app, neu, os.getpid(), starter_final)
     if sys.platform == "win32":
-        # DETACHED_PROCESS und CREATE_NEW_CONSOLE schliessen sich aus (WinError 87) — nur abkoppeln,
-        # ohne Konsole; Ein-/Ausgabe ins Leere, damit das Skript den Server überlebt
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        subprocess.Popen(["cmd", "/c", str(skript)], creationflags=flags, close_fds=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(app.parent))
+        # eigener, unsichtbarer Prozess, der den Server überlebt (CREATE_NO_WINDOW + eigene Prozessgruppe)
+        flags = 0x08000000 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", str(skript)],
+                         creationflags=flags, close_fds=True, cwd=str(app.parent),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         subprocess.Popen(["/bin/sh", str(skript)], start_new_session=True, close_fds=True)
     return skript

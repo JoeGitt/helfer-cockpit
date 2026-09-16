@@ -45,10 +45,14 @@ def test_zip_pruefen_und_entpacken(tmp_path):
         pass
 
 
-def test_tausch_skript_wartet_auf_pid(tmp_path):
+def test_tausch_skript_wartet_auf_pid(tmp_path, monkeypatch):
     s = updater.tausch_skript_schreiben(tmp_path / "app", tmp_path / "app.new", 4242, tmp_path / "app" / "start")
     t = s.read_text()
     assert "4242" in t and "app.new" in t and "app.alt" in t
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    w = updater.tausch_skript_schreiben(tmp_path / "app", tmp_path / "app.new", 4242, tmp_path / "app" / "Helfer-Cockpit.bat")
+    t = w.read_text(encoding="utf-8-sig")
+    assert w.name == "update.ps1" and "Wait-Process -Id 4242" in t and "Start-Process" in t and "tasklist" not in t
 
 
 def test_standort_speichern_laden_und_pruefen(tmp_path, monkeypatch):

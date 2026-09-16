@@ -8,6 +8,7 @@
   python3 start.py --port 8473  festen Port verwenden (Standard: 8473, bei Belegung der nächste freie)
 """
 import json
+import os
 import sys
 import threading
 import webbrowser
@@ -112,7 +113,12 @@ def main():
         zustand.key_setzen = setzen
         zustand.key_loeschen = key_loeschen
     server = _server_starten(zustand, _port_aus_argv())
-    zustand.beenden = lambda: threading.Thread(target=server.shutdown, daemon=True).start()
+    def beenden():
+        # Server sauber stoppen; falls etwas hängt, den Prozess nach kurzer Frist hart beenden,
+        # damit das Update-Skript den Programmordner tauschen kann
+        threading.Thread(target=server.shutdown, daemon=True).start()
+        threading.Timer(4.0, lambda: os._exit(0)).start()
+    zustand.beenden = beenden
     url = f"http://127.0.0.1:{server.server_address[1]}"
     print(f"Helfer-Cockpit {VERSION} läuft: {url}")
     print("Dieses Fenster offen lassen. Schliessen beendet das Cockpit.")
