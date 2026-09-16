@@ -1,4 +1,4 @@
-"""Quartals-Abgleich Fairgate → Portal (Spez. Kap. 6.3, Neufassung 10.09.2026).
+"""Mitglieder-Abgleich Fairgate → Portal (Spez. Kap. 6.3, Neufassung 10.09.2026).
 
 Grundidee: Erst mit BEIDEN Seiten — Portal-Bestand und Fairgate-Export — lässt sich pro
 Account sagen, was er sein sollte (Soll-Zustand): Mitglied, Zweitaccount, Freiwillige(r),

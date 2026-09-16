@@ -753,7 +753,7 @@ function beschreibe(e) {
   const dateien = (e.dateien || []).map((f) => `<a href="${ausgabeLink(f)}" target="_blank" rel="noopener">${esc(f)}</a>`).join(", ");
   switch (e.aktion) {
     case "api-abruf": return { a: "Portal-Abruf", d: `${e.accounts} Accounts${e.hinweise != null ? ` · ${e.hinweise} Hinweise` : ""}` };
-    case "abgleich": return { a: "Quartals-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${e.vorfragen ? ` · ${e.vorfragen} Vorfragen` : ""}${e.abweichungen != null ? ` · ${e.abweichungen} Info` : ""}${dateien ? " · " + dateien : ""}` };
+    case "abgleich": return { a: "Mitglieder-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${e.vorfragen ? ` · ${e.vorfragen} Vorfragen` : ""}${e.abweichungen != null ? ` · ${e.abweichungen} Info` : ""}${dateien ? " · " + dateien : ""}` };
     case "entscheide": return { a: "Vorfragen beantwortet", d: `${e.beantwortet} Antworten${e.geloescht ? ` · ${e.geloescht} wieder offen` : ""} · Import-Datei neu erzeugt` };
     case "kontrolle": return { a: e.synchron ? "Kontrolle: alles synchron ✓" : "Kontrolle: noch offen", d: `${e.handarbeit} Handarbeit · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.klaerliste} Klärfälle` };
     case "saeumigen-csv": return { a: "Säumigen-CSV", d: `${e.anzahl} Einträge (${e.sicht === "halbjahr" ? "Halbjahresziel" : "Saison-Soll"})${dateien ? " · " + dateien : ""}` };
