@@ -458,7 +458,8 @@ def starte_server(zustand, port=0):
                 if not kandidat or kandidat.get("quelle") not in ("github", "ordner"):
                     return self._json({"fehler": "Kein gültiges Update angegeben."}, 400)
                 try:
-                    updater.installieren(kandidat, zustand.konfig_dir or standort_mod.KONFIG)
+                    updates_dir = zustand.daten_ordner / "Updates" if zustand.daten_ordner else None
+                    updater.installieren(kandidat, zustand.konfig_dir or standort_mod.KONFIG, updates_dir)
                 except Exception as e:
                     return self._json({"fehler": str(e)}, 500)
                 protokoll.logge(zustand.protokoll_pfad, "update", {"version": kandidat.get("version"), "quelle": kandidat.get("quelle")})

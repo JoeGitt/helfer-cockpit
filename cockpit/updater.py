@@ -109,7 +109,11 @@ def entpacken(zip_pfad, ziel_neu):
             rel = info.filename[len(wurzel) + 1:] if info.filename.startswith(wurzel + "/") else None
             if not rel:
                 continue
-            ziel = ziel_neu / rel
+            if rel.startswith(("/", "\\")) or ".." in rel.split("/") or ":" in rel.split("/")[0]:
+                raise ValueError(f"Unsicherer Pfad im Zip: {info.filename}")
+            ziel = (ziel_neu / rel).resolve()
+            if ziel != ziel_neu.resolve() and ziel_neu.resolve() not in ziel.parents:
+                raise ValueError(f"Unsicherer Pfad im Zip: {info.filename}")
             if info.is_dir():
                 ziel.mkdir(parents=True, exist_ok=True)
             else:
@@ -150,12 +154,18 @@ def tausch_skript_schreiben(app, neu, pid, starter):
     return pfad
 
 
-def installieren(kandidat, konfig_dir):
+def installieren(kandidat, konfig_dir, updates_dir=None, repo=GITHUB_REPO):
     """Zip beschaffen, prüfen, neben den App-Ordner entpacken und das Tausch-Skript starten.
-    Liefert den Pfad des Skripts; der Aufrufer beendet danach den Server."""
+    Der Aufrufer nennt nur Version und Quelle; URL bzw. Pfad werden serverseitig frisch ermittelt
+    (nichts aus dem Browser wird heruntergeladen oder ausgeführt). Liefert den Pfad des Skripts."""
     app = app_ordner()
     if ist_entwicklung(app):
         raise RuntimeError("Dies ist ein Entwicklungs-Checkout (Git) — Update bitte mit «git pull».")
+    gewuenscht = {"version": str(kandidat.get("version") or ""), "quelle": kandidat.get("quelle")}
+    frisch = pruefe_github(repo) if gewuenscht["quelle"] == "github" else (pruefe_ordner(updates_dir) if updates_dir else None)
+    if not frisch or frisch["version"] != gewuenscht["version"] or not ist_neuer(frisch["version"]):
+        raise RuntimeError("Das angebotene Update ist nicht mehr verfügbar — bitte nochmals «Nach Update suchen».")
+    kandidat = frisch
     konfig_dir = Path(konfig_dir); (konfig_dir / "updates").mkdir(parents=True, exist_ok=True)
     if kandidat.get("quelle") == "github":
         zip_pfad = herunterladen(kandidat["url"], konfig_dir / "updates" / kandidat["name"])

@@ -73,14 +73,16 @@ def ordner_dialog(start=None):
     """Nativen Ordner-Dialog öffnen (Windows: PowerShell, macOS: AppleScript). None = abgebrochen/nicht möglich."""
     try:
         if sys.platform == "win32":
+            # Startpfad nur über eine Umgebungsvariable — nie in den Skripttext interpolieren
             skript = ("Add-Type -AssemblyName System.Windows.Forms; "
                       "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
                       "$d.Description = 'Datenordner des Helfer-Cockpits wählen (z. B. auf dem Netzlaufwerk)'; "
                       "$d.ShowNewFolderButton = $true; "
-                      + (f"$d.SelectedPath = '{start}'; " if start else "")
-                      + "if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }")
+                      "if ($env:HC2_START) { $d.SelectedPath = $env:HC2_START }; "
+                      "if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }")
+            umgebung = {**os.environ, "HC2_START": str(start or "")}
             r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", skript],
-                               capture_output=True, text=True, timeout=300)
+                               capture_output=True, text=True, timeout=300, env=umgebung)
             pfad = (r.stdout or "").strip()
             return pfad or None
         if sys.platform == "darwin":

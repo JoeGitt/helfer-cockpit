@@ -71,3 +71,28 @@ def test_alte_dateien_werden_einmalig_uebernommen(tmp_path):
     (neu / "regeln.json").write_text('{"x":1}')
     assert standort.uebernehme_alte_dateien(neu, alt_konfig=alt, alt_ausgabe=ausgabe) == []    # nichts überschreiben
     assert (neu / "regeln.json").read_text() == '{"x":1}'
+
+
+def test_zip_mit_pfadausbruch_wird_abgelehnt(tmp_path):
+    z = tmp_path / "boese.zip"
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("HelferCockpit/cockpit/version.py", "VERSION='9.9.9'")
+        f.writestr("HelferCockpit/../../ausbruch.txt", "x")
+    try:
+        updater.entpacken(z, tmp_path / "app.new"); assert False
+    except ValueError as e:
+        assert "Unsicher" in str(e)
+    assert not (tmp_path.parent / "ausbruch.txt").exists()
+
+
+def test_installieren_nimmt_keine_url_aus_dem_browser(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater, "ist_entwicklung", lambda app=None: False)
+    monkeypatch.setattr(updater, "pruefe_github", lambda repo=None, timeout=8: None)
+    aufrufe = []
+    monkeypatch.setattr(updater, "herunterladen", lambda url, ziel, timeout=120: aufrufe.append(url))
+    try:
+        updater.installieren({"quelle": "github", "version": "9.9.9", "url": "http://boese.example/x.zip", "name": "x.zip"}, tmp_path)
+        assert False
+    except RuntimeError as e:
+        assert "nicht mehr verfügbar" in str(e)
+    assert aufrufe == []
