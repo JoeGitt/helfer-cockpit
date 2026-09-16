@@ -578,3 +578,15 @@ def test_einrichtung_endpoints(tmp_path, monkeypatch):
         assert (tmp_path / "netz" / "HelferCockpit" / "regeln.json").exists()
     finally:
         srv.shutdown()
+
+
+def test_post_von_fremder_website_wird_abgewiesen(server):
+    req = urllib.request.Request(server + "/api/einrichtung/key", data=b'{"key":"x"}', method="POST",
+                                 headers={"Origin": "https://boese.example"})
+    try:
+        urllib.request.urlopen(req); assert False
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    req = urllib.request.Request(server + "/api/entscheide/loeschen", data=b'{"helper_ids": []}', method="POST", headers={"Origin": "http://127.0.0.1:1234"})
+    with urllib.request.urlopen(req) as r:
+        assert r.status == 200

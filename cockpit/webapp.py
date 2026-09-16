@@ -305,6 +305,16 @@ def starte_server(zustand, port=0):
 
         # DNS-Rebinding-Schutz: nur Requests mit lokalem Host-Header akzeptieren, auch
         # wenn ein Angreifer eine fremde Seite dazu bringt, gegen 127.0.0.1 zu senden.
+        def _origin_ok(self):
+            """Schreibende Anfragen nur von der eigenen Seite: Browser senden bei Anfragen von fremden
+            Websites einen Origin-Header (CSRF) — der muss lokal sein."""
+            origin = self.headers.get("Origin")
+            if origin and not _host_erlaubt(urlparse(origin).netloc):
+                return False
+            if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+                return False
+            return True
+
         def _host_ok(self):
             return _host_erlaubt(self.headers.get("Host"))
 
@@ -381,6 +391,8 @@ def starte_server(zustand, port=0):
         def do_POST(self):
             if not self._host_ok():
                 return self._json({"fehler": "Ungültiger Host-Header — Zugriff verweigert."}, 403)
+            if not self._origin_ok():
+                return self._json({"fehler": "Anfrage von fremder Website — Zugriff verweigert."}, 403)
             try:
                 return self._do_POST()
             except Exception as e:
