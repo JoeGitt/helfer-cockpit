@@ -30,7 +30,8 @@ foreach ($ordner in @([Environment]::GetFolderPath("Desktop"), (Join-Path $env:A
     $lnk.TargetPath = Join-Path $app "Helfer-Cockpit.bat"
     $lnk.WorkingDirectory = $app
     $lnk.Description = "Helfer-Cockpit Pfadi Winterthur Handball"
-    $lnk.IconLocation = "$env:SystemRoot\System32\shell32.dll,167"
+    $ico = Join-Path $app "cockpit\static\logo.ico"
+    $lnk.IconLocation = if (Test-Path $ico) { "$ico,0" } else { "$env:SystemRoot\System32\shell32.dll,167" }
     $lnk.Save()
 }
 Write-Host "Installiert: $app (Version $($rel.tag_name)). Verknüpfung «Helfer-Cockpit» liegt auf dem Desktop."
