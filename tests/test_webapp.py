@@ -590,3 +590,15 @@ def test_post_von_fremder_website_wird_abgewiesen(server):
     req = urllib.request.Request(server + "/api/entscheide/loeschen", data=b'{"helper_ids": []}', method="POST", headers={"Origin": "http://127.0.0.1:1234"})
     with urllib.request.urlopen(req) as r:
         assert r.status == 200
+
+
+def test_regeln_speichern_raeumt_ausgabe_auf(server, tmp_path):
+    with urllib.request.urlopen(server + "/api/stand") as r:
+        json.loads(r.read())
+    # Ausgabe-Ordner des Servers liegt unter tmp_path/Ausgabe (siehe _zustand)
+    ausgabe = tmp_path / "Ausgabe"; ausgabe.mkdir(exist_ok=True)
+    (ausgabe / "import-2020-01-01.xlsx").write_text("x"); (ausgabe / "import-2099-01-01.xlsx").write_text("x")
+    d = _post_json(server + "/api/regeln", {"kategorien": [], "altersgrenze": 16, "halbjahresziel": 1, "email_abweichung": "info", "aufbewahrung_tage": 30})
+    assert d["geloescht"] == ["import-2020-01-01.xlsx"] and (ausgabe / "import-2099-01-01.xlsx").exists()
+    with urllib.request.urlopen(server + "/api/regeln") as r:
+        assert json.loads(r.read())["aufbewahrung_tage"] == 30

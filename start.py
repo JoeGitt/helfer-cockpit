@@ -112,6 +112,12 @@ def main():
             zustand.api_client_factory = lambda: ApiClient(neu, ORG_SLUG)
         zustand.key_setzen = setzen
         zustand.key_loeschen = key_loeschen
+    if zustand.daten_ordner:
+        try:
+            from cockpit.webapp import ausgabe_aufraeumen
+            ausgabe_aufraeumen(zustand)
+        except Exception as e:
+            print(f"Aufräumen der Ausgabe übersprungen: {e}")
     server = _server_starten(zustand, _port_aus_argv())
     def beenden():
         # Server sauber stoppen; falls etwas hängt, den Prozess nach kurzer Frist hart beenden,

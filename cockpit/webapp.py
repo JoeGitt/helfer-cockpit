@@ -18,6 +18,7 @@ from .exports import (schreibe_import_xlsx, schreibe_saeumigen_csv, handarbeitsl
                       import_zeilen_mit_grund, import_begruendung_html)
 from .settings import lade_regeln, lade_regeln_mit_fehler, speichere_regeln, Regeln, KategorieRegel
 from . import protokoll
+from . import aufraeumen as aufraeumen_mod
 from . import standort as standort_mod
 from . import updater
 from .version import VERSION
@@ -163,6 +164,17 @@ def _entscheide_json(z):
     return {hid: {**e, "gespeichert": hid in gespeichert} for hid, e in alle.items()}
 
 
+def ausgabe_aufraeumen(zustand):
+    """Ausgabedateien älter als die Aufbewahrungsfrist löschen und protokollieren."""
+    if not zustand.ausgabe_dir:
+        return []
+    regeln = lade_regeln(zustand.regeln_pfad)
+    geloescht = aufraeumen_mod.aufraeumen(zustand.ausgabe_dir, regeln.aufbewahrung_tage)
+    if geloescht:
+        protokoll.logge(zustand.protokoll_pfad, "aufraeumen", {"geloescht": len(geloescht), "tage": regeln.aufbewahrung_tage})
+    return geloescht
+
+
 def abgleich_ausfuehren(zustand, kontakte, protokollieren=True):
     """Abgleich rechnen, Ausgabedateien schreiben, Antwort merken. Gemeinsam für Fairgate-Upload
     und Vorfragen-Antworten (die Import-Datei wird mit den Antworten neu erzeugt)."""
@@ -192,6 +204,7 @@ def abgleich_ausfuehren(zustand, kontakte, protokollieren=True):
             "vorfragen": len(ergebnis.vorfragen),
             "abweichungen": len(ergebnis.kontakt_abweichungen),
             "dateien": dateien})
+    ausgabe_aufraeumen(zustand)
     antwort = _abgleich_json(zustand, ergebnis)
     antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
                           "kontakte": str(kontakte_pfad), "begruendung": str(begruendung_pfad)}
@@ -445,6 +458,7 @@ def starte_server(zustand, port=0):
                 uebernommen = standort_mod.uebernehme_alte_dateien(meldung, alt_ausgabe=alt_ausgabe)
                 zustand.setze_daten_ordner(meldung)
                 standort_mod.speichere_standort(meldung)
+                ausgabe_aufraeumen(zustand)
                 protokoll.logge(zustand.protokoll_pfad, "einrichtung", {"uebernommen": len(uebernommen)})
                 return self._json({**zustand.einrichtung_json(), "uebernommen": uebernommen})
             if u.path == "/api/einrichtung/key":
@@ -548,9 +562,10 @@ def starte_server(zustand, port=0):
                 regeln = Regeln(kategorien=[KategorieRegel(**k) for k in daten["kategorien"]],
                                 altersgrenze=int(daten["altersgrenze"]),
                                 halbjahresziel=int(daten["halbjahresziel"]),
-                                email_abweichung=email_abweichung)
+                                email_abweichung=email_abweichung,
+                                aufbewahrung_tage=max(0, int(daten.get("aufbewahrung_tage", 90))))
                 speichere_regeln(regeln, zustand.regeln_pfad)
-                return self._json({"ok": True})
+                return self._json({"ok": True, "geloescht": ausgabe_aufraeumen(zustand)})
             if u.path == "/api/export/saeumige":
                 sicht = parse_qs(u.query).get("sicht", ["saison"])[0]
                 if sicht not in SICHTEN:

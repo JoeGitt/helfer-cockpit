@@ -737,7 +737,7 @@
         <div class="card section">
           <h2>Version und Update</h2>
           <p class="sub" id="upd-version">Helfer-Cockpit</p>
-          <p class="sub" id="upd-neu">Neu in 2.1.8: Selbst-Update, Datenordner auf dem Netzlaufwerk, Vorfragen im Mitglieder-Abgleich, Familien-Topf.</p>
+          <p class="sub" id="upd-neu">Neu in 2.1.9: Ausgabedateien werden nach 90 Tagen automatisch gelöscht (einstellbar unter Regeln).</p>
           <div class="einr-row"><button class="btn" id="upd-pruefen"><svg class="ic"><use href="#i-refresh"/></svg>Nach Update suchen</button><span class="sub" id="upd-stand"></span></div>
           <div id="upd-ergebnis"></div>
         </div>
@@ -771,6 +771,7 @@
           <div class="field"><div>Halbjahresziel<div class="desc">Zwischenziel bis zur Saisonhälfte, in Einsätzen.</div></div><input type="number" id="regel-halbjahr" min="0" max="20"></div>
           <div class="field"><div>E-Mail weicht zwischen Portal und Fairgate ab<div class="desc">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. «Nur auflisten» erzeugt eine Info-Liste zum Nachführen in Fairgate; «als Handarbeit» verlangt die Korrektur im Portal vor dem Import.</div></div>
             <select id="regel-email" style="background:var(--bg);border:1px solid var(--border-strong);border-radius:6px;padding:6px 9px;color:var(--ink);font:inherit"><option value="info">Nur auflisten (empfohlen)</option><option value="handarbeit">Als Handarbeit führen</option></select></div>
+          <div class="field"><div>Ausgabedateien aufbewahren (Tage)<div class="desc">Import-Dateien, Handarbeitslisten, Kontaktabweichungen, Säumigen-Listen und Gesamtexporte im Ordner «Ausgabe» werden nach dieser Frist gelöscht — sie enthalten Personendaten und sind nach dem Import nur noch Nachweis. 0 = nie löschen. Geprüft beim Start und nach jedem Abgleich.</div></div><input type="number" id="regel-aufbewahrung" min="0" max="3650"></div>
           <div class="field"><div>Zweitaccount-Erkennung<div class="desc">Fest verdrahtet — Änderung nur im Code.</div></div><div class="fixed">FG-Nummer in Bemerkung, Gruppe ≠ Mitglied</div></div>
           <div class="field"><div>Unbekannte mit Einsatz oder Anmeldung<div class="desc">Vereinsregel, Umteilung von Hand im Portal.</div></div><div class="fixed">→ Freiwillige</div></div>
         </div>

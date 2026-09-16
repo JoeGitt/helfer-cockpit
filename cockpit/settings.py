@@ -19,6 +19,7 @@ class Regeln:
     altersgrenze: int = 16
     halbjahresziel: int = 1
     email_abweichung: str = "info"     # "info": nur auflisten | "handarbeit": als Schlüssel-Änderung führen
+    aufbewahrung_tage: int = 90        # Ausgabedateien älter als so viele Tage werden gelöscht (0 = nie)
 
     def fuer_kategorie(self, name):
         for k in self.kategorien:
@@ -51,6 +52,7 @@ def lade_regeln_mit_fehler(pfad):
             altersgrenze=int(daten.get("altersgrenze", 16)),
             halbjahresziel=int(daten.get("halbjahresziel", 1)),
             email_abweichung=(daten.get("email_abweichung") or "info"),
+            aufbewahrung_tage=max(0, int(daten.get("aufbewahrung_tage", 90))),
         )
         if regeln.email_abweichung not in ("info", "handarbeit"):
             raise ValueError("email_abweichung muss «info» oder «handarbeit» sein")

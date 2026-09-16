@@ -846,7 +846,7 @@ function befuelleRegeln() {
   const r = S.regeln; if (!r) return;
   $("regeln-kategorien").innerHTML = r.kategorien.map(kategorieZeile).join("");
   $("regel-altersgrenze").value = r.altersgrenze; $("regel-halbjahr").value = r.halbjahresziel;
-  $("regel-email").value = r.email_abweichung || "info";
+  $("regel-email").value = r.email_abweichung || "info"; $("regel-aufbewahrung").value = r.aufbewahrung_tage ?? 90;
   setSicht(S.sicht);
 }
 function kategorieZeile(k = { name: "", pflichtig: true, zielwert: 2, portal_gruppe: "Mitglied" }) {
@@ -857,7 +857,7 @@ async function speichereRegeln() {
     name: tr.querySelector(".k-name").value.trim(), pflichtig: tr.querySelector(".k-pflichtig").checked,
     zielwert: Number(tr.querySelector(".k-ziel").value) || 0, portal_gruppe: tr.querySelector(".k-gruppe").value.trim(),
   })).filter((k) => k.name);
-  const body = { kategorien, altersgrenze: Number($("regel-altersgrenze").value) || 16, halbjahresziel: Number($("regel-halbjahr").value) || 1, email_abweichung: $("regel-email").value };
+  const body = { kategorien, altersgrenze: Number($("regel-altersgrenze").value) || 16, halbjahresziel: Number($("regel-halbjahr").value) || 1, email_abweichung: $("regel-email").value, aufbewahrung_tage: Math.max(0, Number($("regel-aufbewahrung").value) || 0) };
   try {
     await holeJson("/api/regeln", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     zeigeFehler("regeln-speichern", null); toast("Regeln gespeichert."); await ladeRegeln(); await ladeStand();
@@ -869,6 +869,7 @@ function beschreibe(e) {
     case "api-abruf": return { a: "Portal-Abruf", d: `${e.accounts} Accounts${e.hinweise != null ? ` · ${e.hinweise} Hinweise` : ""}` };
     case "abgleich": return { a: "Mitglieder-Abgleich", d: `${e.geprueft} geprüft · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.handarbeit} Handarbeit${e.vorfragen ? ` · ${e.vorfragen} Vorfragen` : ""}${e.abweichungen != null ? ` · ${e.abweichungen} Info` : ""}${dateien ? " · " + dateien : ""}` };
     case "entscheide": return { a: "Vorfragen beantwortet", d: `${e.beantwortet} Antworten${e.geloescht ? ` · ${e.geloescht} wieder offen` : ""} · Import-Datei neu erzeugt` };
+    case "aufraeumen": return { a: "Ausgabe aufgeräumt", d: `${e.geloescht} Dateien älter als ${e.tage} Tage gelöscht` };
     case "kontrolle": return { a: e.synchron ? "Kontrolle: alles synchron ✓" : "Kontrolle: noch offen", d: `${e.handarbeit} Handarbeit · ${e.neueintritte} Neueintritte · ${e.korrekturen} Korrekturen · ${e.klaerliste} Klärfälle` };
     case "saeumigen-csv": return { a: "Säumigen-CSV", d: `${e.anzahl} Einträge (${e.sicht === "halbjahr" ? "Halbjahresziel" : "Saison-Soll"})${dateien ? " · " + dateien : ""}` };
     case "gesamtexport": return { a: "Excel-Gesamtexport", d: `${e.anzahl} Mitglieder${dateien ? " · " + dateien : ""}` };
