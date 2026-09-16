@@ -9,7 +9,7 @@ Rechner, Oberfläche im Browser. Keine Personendaten im Programmpaket und in die
 1. Diese Datei herunterladen und doppelklicken: **[Installieren.bat](packaging/Installieren.bat)**
    (Rechtsklick → «Ziel speichern unter»). Alternativ in PowerShell:
    ```
-   irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit-2/main/packaging/install.ps1 | iex
+   irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit/main/packaging/install.ps1 | iex
    ```
    Der Installer lädt das neueste Paket von GitHub nach `%LOCALAPPDATA%\HelferCockpit\app`, legt die
    Verknüpfung «Helfer-Cockpit» auf den Desktop und ins Startmenü und startet das Cockpit.

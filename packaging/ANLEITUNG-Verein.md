@@ -4,7 +4,7 @@
 
 1. **Netzlaufwerk vorbereiten:** Ordner anlegen, auf den alle Verantwortlichen Schreibrecht haben, z. B. `\\server\verein\HelferCockpit`.
 2. **Installieren:** `Installieren.bat` aus dem Repo (packaging/) auf den PC laden und doppelklicken. Oder PowerShell öffnen und einfügen:
-   `irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit-2/main/packaging/install.ps1 | iex`
+   `irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit/main/packaging/install.ps1 | iex`
    SmartScreen-Hinweis: «Weitere Informationen» → «Trotzdem ausführen».
 3. **Einrichtung im Browser:** Datenordner = der Netzlaufwerk-Ordner («Ordner wählen …»), API-Key einfügen, «Cockpit starten».
 4. **Regeln prüfen:** Einstellungen → Regeln (Fairgate-Kategorien, Zielwerte). Sie liegen jetzt im Datenordner.

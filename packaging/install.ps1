@@ -1,7 +1,7 @@
 # Helfer-Cockpit installieren oder aktualisieren (Windows, ohne Admin-Rechte)
 #   powershell -ExecutionPolicy Bypass -File install.ps1
-#   oder als Einzeiler:  irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit-2/main/packaging/install.ps1 | iex
-param([string]$Repo = "JoeGitt/helfer-cockpit-2", [string]$Ziel = "$env:LOCALAPPDATA\HelferCockpit")
+#   oder als Einzeiler:  irm https://raw.githubusercontent.com/JoeGitt/helfer-cockpit/main/packaging/install.ps1 | iex
+param([string]$Repo = "JoeGitt/helfer-cockpit", [string]$Ziel = "$env:LOCALAPPDATA\HelferCockpit")
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Write-Host "Helfer-Cockpit: neueste Version von GitHub ($Repo) holen ..."
