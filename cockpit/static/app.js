@@ -67,10 +67,14 @@ async function holeJson(url, optionen) {
 }
 
 // ------------------------------------------------------------------ Navigation ----
+const HELFENDE_ANSICHTEN = ["p-kontingent", "p-helfende"];   // eine Navigation «Helfende», zwei Ansichten
 function zeigePanel(id) {
+  const navId = HELFENDE_ANSICHTEN.includes(id) ? "p-kontingent" : id;
   document.querySelectorAll(".navitem, #btn-einstellungen").forEach((b) => {
-    if (b.dataset.panel === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    if (b.dataset.panel === navId) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
+  document.querySelectorAll(".seg.ansicht [data-ansicht]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.ansicht === id)));
+  if (HELFENDE_ANSICHTEN.includes(id)) { try { localStorage.setItem("hc2-ansicht", id); } catch (e) { /* optional */ } }
   document.querySelectorAll("section.panel").forEach((p) => p.classList.toggle("active", p.id === id));
   window.scrollTo({ top: 0 });
 }
@@ -147,7 +151,8 @@ function anwenden(d) {
   const g = geladen();
   $("stand-anzeige").textContent = g ? `${d.alle_accounts.length} Accounts · Stand ${d.stand}` : "Noch nicht abgerufen";
   $("nav-n-kontingent").textContent = g ? d.mitglieder.length : "";
-  $("nav-n-helfende").textContent = g ? d.alle_accounts.length : "";
+  document.querySelectorAll(".seg-n-mitglieder").forEach((el) => { el.textContent = g ? d.mitglieder.length : ""; });
+  document.querySelectorAll(".seg-n-accounts").forEach((el) => { el.textContent = g ? d.alle_accounts.length : ""; });
   const kritisch = d.hinweise.filter((h) => h.schweregrad === "kritisch").length;
   const nAb = $("nav-n-abgleich");
   nAb.textContent = kritisch || ""; nAb.className = "n num " + (kritisch ? "crit" : "");
@@ -777,10 +782,15 @@ async function gesamtexport() {
 
 // ------------------------------------------------------------------ Start ----
 document.addEventListener("DOMContentLoaded", async () => {
-  document.querySelectorAll(".navitem, #btn-einstellungen").forEach((b) => b.addEventListener("click", () => zeigePanel(b.dataset.panel)));
+  document.querySelectorAll(".navitem, #btn-einstellungen").forEach((b) => b.addEventListener("click", () => {
+    let ziel = b.dataset.panel;
+    if (ziel === "p-kontingent") { try { const m = localStorage.getItem("hc2-ansicht"); if (HELFENDE_ANSICHTEN.includes(m)) ziel = m; } catch (e) { /* optional */ } }
+    zeigePanel(ziel);
+  }));
   document.querySelectorAll(".subtabs [data-sub]").forEach((b) => b.addEventListener("click", () => zeigeSub(b.dataset.sub)));
   $("btn-abrufen").addEventListener("click", () => abrufen(false));
   document.querySelectorAll(".seg [data-sicht]").forEach((b) => b.addEventListener("click", () => setSicht(b.dataset.sicht)));
+  document.querySelectorAll(".seg.ansicht [data-ansicht]").forEach((b) => b.addEventListener("click", () => { zeigePanel(b.dataset.ansicht); if (b.dataset.ansicht === "p-helfende") renderTabelleH(); else renderTabelleK(); }));
 
   document.querySelectorAll("#chips-kontingent .chip").forEach((c) => c.addEventListener("click", () => { S.k.filter = c.dataset.filter; document.querySelectorAll("#chips-kontingent .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); renderTabelleK(); }));
   $("suche-kontingent").addEventListener("input", (e) => { S.k.suche = e.target.value; renderTabelleK(); });

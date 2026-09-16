@@ -108,6 +108,8 @@
   .seg button{border:none; background:var(--surface); color:var(--muted); font:600 12.5px var(--body); padding:7px 13px; cursor:pointer}
   .seg button+button{border-left:1px solid var(--border-strong)}
   .seg button[aria-pressed="true"]{background:var(--btn); color:var(--btn-ink)}
+  .seg.ansicht{align-self:center} .seg .c{font-size:11px; opacity:.75; margin-left:4px; font-variant-numeric:tabular-nums}
+  .pagehead .meta{flex-basis:100%}
 
   .banner{display:flex; gap:10px; align-items:flex-start; border-radius:var(--r-sm); padding:10px 14px; font-size:13px; font-weight:500; margin-bottom:14px}
   .banner.error{background:var(--red-soft); color:var(--red-ink); border:1px solid var(--red)}
@@ -451,8 +453,7 @@
     </div>
     <nav aria-label="Bereiche">
       <button class="navitem" data-panel="p-abgleich" aria-current="page"><svg class="ic"><use href="#i-swap"/></svg>Quartals-Abgleich <span class="n num" id="nav-n-abgleich"></span></button>
-      <button class="navitem" data-panel="p-kontingent"><svg class="ic"><use href="#i-grid"/></svg>Kontingent <span class="n num" id="nav-n-kontingent"></span></button>
-      <button class="navitem" data-panel="p-helfende"><svg class="ic"><use href="#i-users"/></svg>Alle Helfenden <span class="n num" id="nav-n-helfende"></span></button>
+      <button class="navitem" data-panel="p-kontingent"><svg class="ic"><use href="#i-users"/></svg>Helfende <span class="n num" id="nav-n-kontingent"></span></button>
       <button class="navitem" data-panel="p-bericht"><svg class="ic"><use href="#i-chart"/></svg>Bericht</button>
     </nav>
     <div class="spacer"></div>
@@ -471,8 +472,12 @@
     <!-- ================= KONTINGENT ================= -->
     <section class="panel" id="p-kontingent" aria-labelledby="h-kontingent">
       <div class="pagehead">
-        <h1 id="h-kontingent">Kontingent-Erfüllung</h1>
-        <span class="meta" id="sicht-label">Sicht: Saison-Soll</span>
+        <h1 id="h-kontingent">Helfende</h1>
+        <div class="seg ansicht" role="group" aria-label="Ansicht">
+            <button data-ansicht="p-kontingent" aria-pressed="true">Nach Mitglied <span class="c seg-n-mitglieder"></span></button>
+            <button data-ansicht="p-helfende" aria-pressed="false">Nach Account <span class="c seg-n-accounts"></span></button>
+          </div>
+        <span class="meta" id="sicht-label">Kontingent pro Mitglied — alle Accounts einer FG-Nummer zusammengezählt · Sicht: Saison-Soll</span>
         <div class="actions">
           <div class="seg" role="group" aria-label="Sicht">
             <button data-sicht="saison" aria-pressed="true">Saison-Soll</button>
@@ -524,8 +529,12 @@
     <!-- ================= ALLE HELFENDEN ================= -->
     <section class="panel" id="p-helfende" aria-labelledby="h-helfende">
       <div class="pagehead">
-        <h1 id="h-helfende">Alle Helfenden</h1>
-        <span class="meta">Jeder Account im Portal — Anzahl-Zähler zeigen, wer die Einsätze ausführt</span>
+        <h1 id="h-helfende">Helfende</h1>
+        <div class="seg ansicht" role="group" aria-label="Ansicht">
+            <button data-ansicht="p-kontingent" aria-pressed="false">Nach Mitglied <span class="c seg-n-mitglieder"></span></button>
+            <button data-ansicht="p-helfende" aria-pressed="true">Nach Account <span class="c seg-n-accounts"></span></button>
+          </div>
+        <span class="meta">Jeder Account im Portal einzeln — die Zähler zeigen, wer die Einsätze ausführt</span>
         <div class="actions">
           <button class="btn" id="btn-gesamtexport-2"><svg class="ic"><use href="#i-download"/></svg>Excel-Gesamtexport</button>
           <button class="btn" id="btn-print-helfende"><svg class="ic"><use href="#i-print"/></svg>Drucken</button>
