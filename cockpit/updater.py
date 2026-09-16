@@ -176,7 +176,11 @@ def installieren(kandidat, konfig_dir, updates_dir=None, repo=GITHUB_REPO):
     starter_final = app / starter.name
     skript = tausch_skript_schreiben(app, neu, os.getpid(), starter_final)
     if sys.platform == "win32":
-        subprocess.Popen(["cmd", "/c", str(skript)], creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(subprocess, "DETACHED_PROCESS", 0), close_fds=True)
+        # DETACHED_PROCESS und CREATE_NEW_CONSOLE schliessen sich aus (WinError 87) — nur abkoppeln,
+        # ohne Konsole; Ein-/Ausgabe ins Leere, damit das Skript den Server überlebt
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen(["cmd", "/c", str(skript)], creationflags=flags, close_fds=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(app.parent))
     else:
         subprocess.Popen(["/bin/sh", str(skript)], start_new_session=True, close_fds=True)
     return skript
