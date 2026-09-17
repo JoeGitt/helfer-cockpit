@@ -4,6 +4,7 @@ import html as html_mod
 from pathlib import Path
 import openpyxl
 from .model import status, Typ
+from . import telefon as tel
 
 IMPORT_SPALTEN = ["Vorname", "Nachname", "E-Mail", "Telefon", "Gruppe",
                   "zusätzliche E-Mail (1)", "zusätzliche E-Mail (2)", "Geburtsdatum",
@@ -18,7 +19,9 @@ def schreibe_import_xlsx(zeilen, pfad):
     ws.title = "Import"
     ws.append(IMPORT_SPALTEN)
     for z in zeilen:
-        ws.append([z.vorname or None, z.nachname or None, z.email or None, z.telefon or None,
+        # Sicherheitsnetz: das Portal nimmt bei Telefon nur Ziffern und Leerzeichen
+        telefon = z.telefon if tel.sauber(z.telefon) else tel.fuer_import(z.telefon)
+        ws.append([z.vorname or None, z.nachname or None, z.email or None, telefon or None,
                    z.gruppe or None, z.zusatz_email1 or None, z.zusatz_email2 or None,
                    z.geburtsdatum or None, z.geschlecht or None, z.zielwert or None,
                    z.bemerkungen or None])

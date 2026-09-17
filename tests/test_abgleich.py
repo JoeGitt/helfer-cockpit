@@ -559,3 +559,21 @@ def test_familien_nummer_ohne_fairgate_kontakt_gibt_aufraeum_hinweis():
     e = gleiche_ab([_k_erw(1, "Elias", "Wenger", "e@example.ch")], [eltern, _acc(2, "Elias", "Wenger", "e@example.ch", "FG-1")], REGELN, HEUTE)
     assert any("FG-9" in h["titel"] and "nicht mehr in Fairgate" in h["titel"] for h in e.hinweise)
     assert e.handarbeit == []
+
+
+# ---- Telefon: Vergleich auf Ziffern, Import nur Ziffern und Leerzeichen ----
+
+def test_telefon_mit_zusatz_ist_keine_korrektur_und_import_ist_sauber():
+    a = classify({"id": 1, "firstName": "Lina", "lastName": "Brunner", "email": "lina@example.ch", "adminRemarks": "FG-1",
+                  "phone": "079 123 45 67", "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0}})
+    k = _k_erw(1, "Lina", "Brunner", "lina@example.ch"); k.telefon = "+41 79 123 45 67 (Mama)"
+    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    assert not any(z.telefon for z in e.korrekturen)                    # gleiche Nummer, nur anders geschrieben
+    k.telefon = "078 999 88 77 Papa"
+    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.telefon)
+    assert z.telefon == "078 999 88 77"                                  # neue Nummer, ohne Zusatz
+    # Neueintritt bekommt ebenfalls nur Ziffern und Leerzeichen
+    k2 = _k_erw(2, "Neu", "Kind", "neu@example.ch"); k2.telefon = "079 555 66 77 (Papa)"
+    e = gleiche_ab([k, k2], [a], REGELN, HEUTE)
+    assert e.neueintritte[0].telefon == "079 555 66 77"

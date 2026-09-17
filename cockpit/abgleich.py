@@ -11,6 +11,7 @@ sind; die Gruppen-Spalte (ersetzt im Portal die ganze Liste!) wird nur befüllt,
 Marker-Gruppen ändern — und dann immer mit der vollständigen Zielliste.
 """
 import datetime
+from . import telefon as tel
 from dataclasses import dataclass, field
 from .model import Typ, GRUPPE_MITGLIED, GRUPPE_FREIWILLIGE, GRUPPE_UNBEKANNTE
 
@@ -255,8 +256,8 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                 felder = {}
                 if a.zielwert != regel.zielwert:
                     felder["zielwert"] = str(regel.zielwert)
-                if k.telefon and k.telefon != a.telefon:
-                    felder["telefon"] = k.telefon
+                if tel.ziffern(k.telefon) and not tel.gleich(k.telefon, a.telefon):
+                    felder["telefon"] = tel.fuer_import(k.telefon)
                 felder["gruppe"] = _zielgruppen(a, weg=(GRUPPE_FREIWILLIGE, GRUPPE_UNBEKANNTE))
                 grund = "Mitglied: " + ", ".join(
                     [t for t, ok in (("Zielwert nachführen", "zielwert" in felder),
@@ -541,7 +542,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                   wo="Fairgate", fg=fg)
             continue
         e.neueintritte.append(ImportZeile(
-            vorname=k.vorname, nachname=k.nachname, email=mail, telefon=k.telefon,
+            vorname=k.vorname, nachname=k.nachname, email=mail, telefon=tel.fuer_import(k.telefon),
             gruppe=regel.portal_gruppe, geburtsdatum=k.geburtsdatum,
             zielwert=str(regel.zielwert), bemerkungen=fg,
             grund="Neueintritt: in Fairgate, noch kein Portal-Account"))
