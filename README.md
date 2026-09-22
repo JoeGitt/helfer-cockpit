@@ -33,8 +33,11 @@ ohne Internet der Ordner `Updates` im Datenordner (dort ein `HelferCockpit-<Vers
 ablegen). «Jetzt aktualisieren» lädt das Paket, beendet das Cockpit, tauscht den Programmordner und
 startet neu. Datenordner und API-Key bleiben unberührt.
 
-Neue Version veröffentlichen (Entwickler): `VERSION` in `cockpit/version.py` erhöhen, committen,
-Tag `v<Version>` pushen — GitHub Actions baut das Windows-Paket und hängt es ans Release.
+Neue Version veröffentlichen (Entwickler): `VERSION` in `cockpit/version.py` erhöhen, zuoberst in
+`cockpit/CHANGELOG.md` einen Abschnitt `## <Version> — <Datum>` mit Punkten ergänzen, committen, Tag
+`v<Version>` pushen. GitHub Actions prüft Tests und Hinweise, baut das Windows-Paket und veröffentlicht den
+Abschnitt als Release-Text. Im Cockpit erscheinen die Hinweise unter Einstellungen → Über & Update und nach
+jedem Update einmal als Banner.
 Lokal bauen: `python3 packaging/build_release.py` → `dist/HelferCockpit-<Version>-windows.zip`.
 
 ## macOS / Entwicklung

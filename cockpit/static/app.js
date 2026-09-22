@@ -82,7 +82,7 @@ function zeigeSub(id) {
   document.querySelectorAll(".subtabs [data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === id)));
   document.querySelectorAll(".subpanel").forEach((p) => p.classList.toggle("active", p.id === id));
   if (id === "s-antworten") ladeAntworten();
-  if (id === "s-update") ladeUpdateTab();
+  if (id === "s-update") { ladeUpdateTab(); const b = $("btn-einstellungen"); if (b) b.classList.remove("neu"); }
 }
 // ---- Einrichtung (erster Start) und Über & Update ----
 let EINR = null;
@@ -137,6 +137,53 @@ function renderUeber() {
 async function ladeUpdateTab() {
   if (!EINR) await ladeEinrichtung();
   renderUeber();
+  ladeVersionshinweise();
+}
+// ---- Versionshinweise (cockpit/CHANGELOG.md) ----
+function vhEintrag(e, aktuell) {
+  return `<div class="vh"><div class="vh-kopf"><b>${esc(e.version)}</b><span class="sub">${esc(e.datum)}</span>${e.version === aktuell ? `<span class="typ mitglied">installiert</span>` : ""}</div><ul>${e.punkte.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>`;
+}
+async function ladeVersionshinweise() {
+  const el = $("versionshinweise"); if (!el) return;
+  try {
+    const d = await holeJson("/api/versionshinweise");
+    const e = d.eintraege || [];
+    el.innerHTML = e.length ? e.slice(0, 3).map((x) => vhEintrag(x, d.aktuell)).join("")
+      + (e.length > 3 ? `<details class="vh-aelter"><summary>Ältere Versionen (${e.length - 3})</summary>${e.slice(3).map((x) => vhEintrag(x, d.aktuell)).join("")}</details>` : "")
+      : `<p class="hint">Keine Versionshinweise vorhanden.</p>`;
+  } catch (err) { el.innerHTML = `<p class="hint">Versionshinweise nicht verfügbar: ${esc(err.message)}</p>`; }
+}
+// Nach einem Update einmal zeigen, was neu ist
+function versionGesehenPruefen() {
+  if (!EINR) return;
+  let alt = null;
+  try { alt = localStorage.getItem("hc2-version-gesehen"); localStorage.setItem("hc2-version-gesehen", EINR.version); } catch (e) { return; }
+  if (alt && alt !== EINR.version) {
+    toast(`Aktualisiert auf Version ${EINR.version}. Was ist neu? → Einstellungen, Über & Update.`);
+    const b = $("btn-einstellungen"); if (b) b.classList.add("neu");
+    holeJson("/api/versionshinweise").then((d) => {
+      const neu = (d.eintraege || []).filter((e) => vergleicheVersion(e.version, alt) > 0);
+      if (!neu.length) return;
+      const box = document.createElement("div");
+      box.className = "banner info"; box.id = "banner-neu";
+      box.innerHTML = `${ic("check")}<div><b>Aktualisiert auf ${esc(EINR.version)}.</b> Neu seit ${esc(alt)}:<ul>${neu.flatMap((e) => e.punkte).slice(0, 6).map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div><button class="btn ghost" id="banner-neu-zu">Verstanden</button>`;
+      const ziel = document.querySelector("main .content") || document.querySelector("main") || document.body;
+      ziel.prepend(box);
+      $("banner-neu-zu").addEventListener("click", () => box.remove());
+    }).catch(() => {});
+  }
+}
+function vergleicheVersion(a, b) {
+  const t = (v) => String(v).split(".").map((x) => parseInt(x, 10) || 0);
+  const [x, y] = [t(a), t(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+  return 0;
+}
+// Release-Text von GitHub («- Punkt»-Zeilen) sicher als Liste darstellen
+function mdListe(text) {
+  const zeilen = String(text || "").split(/\r?\n/).map((z) => z.trim()).filter(Boolean);
+  const punkte = zeilen.filter((z) => z.startsWith("- ") || z.startsWith("* ")).map((z) => z.slice(2));
+  return punkte.length ? `<ul>${punkte.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : `<pre>${esc(zeilen.join("\n"))}</pre>`;
 }
 async function updatePruefen() {
   $("upd-stand").textContent = "Suche …"; $("upd-ergebnis").innerHTML = "";
@@ -145,7 +192,8 @@ async function updatePruefen() {
     $("upd-stand").textContent = `Aktuell: ${d.aktuell} · GitHub ${d.github_erreichbar ? "erreichbar" : "nicht erreichbar"}${d.ordner_geprueft ? " · Ordner «Updates» geprüft" : ""}`;
     if (!d.neu) { $("upd-ergebnis").innerHTML = `<div class="upd"><b>Du hast die neueste Version.</b></div>`; return; }
     if (d.entwicklung) { $("upd-ergebnis").innerHTML = `<div class="upd"><b>Version ${esc(d.neu.version)} verfügbar</b> — dies ist ein Entwicklungs-Checkout: Update mit <code>git pull</code>.</div>`; return; }
-    $("upd-ergebnis").innerHTML = `<div class="upd"><b>Version ${esc(d.neu.version)} verfügbar</b> (${d.neu.quelle === "github" ? "von GitHub" : "aus dem Ordner «Updates»"})${d.neu.notizen ? `<pre>${esc(d.neu.notizen)}</pre>` : ""}<button class="btn primary" id="upd-jetzt">${ic("download")}Jetzt aktualisieren</button><span class="sub" style="margin-left:10px">Das Cockpit lädt das Paket, beendet sich, ersetzt sich und startet neu — der Browser öffnet sich dann von selbst.</span></div>`;
+    const hinweise = (d.neu.hinweise || []).map((h) => `<div class="vh"><div class="vh-kopf"><b>${esc(h.version)}</b></div><div class="md">${mdListe(h.text)}</div></div>`).join("");
+    $("upd-ergebnis").innerHTML = `<div class="upd"><b>Version ${esc(d.neu.version)} verfügbar</b> (${d.neu.quelle === "github" ? "von GitHub" : "aus dem Ordner «Updates»"})${hinweise || (d.neu.notizen ? `<pre>${esc(d.neu.notizen)}</pre>` : "")}<button class="btn primary" id="upd-jetzt">${ic("download")}Jetzt aktualisieren</button><span class="sub" style="margin-left:10px">Das Cockpit lädt das Paket, beendet sich, ersetzt sich und startet neu — der Browser öffnet sich dann von selbst.</span></div>`;
     $("upd-jetzt").addEventListener("click", async () => {
       $("upd-jetzt").disabled = true; $("upd-jetzt").innerHTML = ic("refresh", "spin") + "Wird geladen …";
       try {
@@ -1041,6 +1089,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await ladeEinrichtung();
   if (EINR && !(EINR.eingerichtet && EINR.key_vorhanden)) { renderEinrichtung(); renderUeber(); zeigePanel("p-einrichtung"); await ladeRegeln(); await ladeStand(); await ladeProtokoll(); return; }
   renderUeber();
+  versionGesehenPruefen();
   const gespeichert = wizLaden();
   wizZeige(0);
   await ladeRegeln();

@@ -22,6 +22,7 @@ from . import aufraeumen as aufraeumen_mod
 from . import standort as standort_mod
 from . import updater
 from .version import VERSION
+from . import changelog
 
 STATIC = Path(__file__).parent / "static"
 STATIC_RESOLVED = STATIC.resolve()
@@ -404,6 +405,8 @@ def starte_server(zustand, port=0):
                 return self._json(asdict(lade_regeln(zustand.regeln_pfad)))
             if pfad == "/api/einrichtung":
                 return self._json(zustand.einrichtung_json())
+            if pfad == "/api/versionshinweise":
+                return self._json({"aktuell": VERSION, "eintraege": changelog.lies()})
             if pfad == "/api/update/pruefen":
                 updates_dir = zustand.daten_ordner / "Updates" if zustand.daten_ordner else None
                 return self._json(updater.pruefe(updates_dir))

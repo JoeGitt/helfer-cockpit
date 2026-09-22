@@ -17,10 +17,12 @@ jobs:
         run: |
           V=$(python -c "from cockpit.version import VERSION; print(VERSION)")
           [ "v$V" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} passt nicht zu VERSION $V"; exit 1; }
+      - name: Versionshinweise aus cockpit/CHANGELOG.md
+        run: mkdir -p dist && python packaging/release_notes.py > dist/versionshinweise.md
       - name: Windows-Paket bauen
         run: python packaging/build_release.py
       - name: Release veröffentlichen
         uses: softprops/action-gh-release@v2
         with:
           files: dist/HelferCockpit-*-windows.zip
-          generate_release_notes: true
+          body_path: dist/versionshinweise.md

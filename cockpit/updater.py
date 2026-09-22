@@ -34,21 +34,38 @@ def ist_entwicklung(app=None):
     return ((app or app_ordner()) / ".git").exists()
 
 
-def pruefe_github(repo=GITHUB_REPO, timeout=8):
-    """Neueste Version auf GitHub. Liefert dict oder None (kein Internet, kein Release)."""
-    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest",
+def pruefe_github(repo=GITHUB_REPO, timeout=8, aktuell=VERSION):
+    """Neueste Version auf GitHub samt den Versionshinweisen aller Releases, die neuer sind als die
+    installierte. Liefert dict oder None (kein Internet, kein Release mit Windows-Paket)."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases?per_page=30",
                                  headers={"Accept": "application/vnd.github+json", "User-Agent": "helfer-cockpit"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            d = json.loads(r.read().decode("utf-8"))
+            releases = json.loads(r.read().decode("utf-8"))
     except Exception:
         return None
-    for a in d.get("assets") or []:
-        if ASSET_MUSTER.search(a.get("name", "")):
-            return {"version": d.get("tag_name", "").lstrip("v"), "quelle": "github",
-                    "url": a.get("browser_download_url"), "name": a["name"],
-                    "notizen": (d.get("body") or "").strip()[:2000], "groesse": a.get("size")}
-    return None
+    return auswerten(releases, aktuell)
+
+
+def auswerten(releases, aktuell=VERSION):
+    """Aus der Release-Liste der GitHub-API: neueste Version mit Windows-Paket und die Hinweise seit «aktuell»."""
+    bester, hinweise = None, []
+    for d in releases or []:
+        if d.get("draft") or d.get("prerelease"):
+            continue
+        version = (d.get("tag_name") or "").lstrip("v")
+        asset = next((a for a in d.get("assets") or [] if ASSET_MUSTER.search(a.get("name", ""))), None)
+        if ist_neuer(version, aktuell):
+            hinweise.append({"version": version, "text": (d.get("body") or "").strip()[:4000]})
+        if asset and (bester is None or ist_neuer(version, bester["version"])):
+            bester = {"version": version, "quelle": "github", "url": asset.get("browser_download_url"),
+                      "name": asset["name"], "groesse": asset.get("size")}
+    if not bester:
+        return None
+    hinweise.sort(key=lambda h: version_tuple(h["version"]), reverse=True)
+    bester["hinweise"] = hinweise
+    bester["notizen"] = "\n\n".join(f"{h['version']}\n{h['text']}" for h in hinweise)[:4000]
+    return bester
 
 
 def pruefe_ordner(updates_dir):
