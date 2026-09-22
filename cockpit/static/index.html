@@ -401,6 +401,7 @@
   .vf .antw select{font:12.5px var(--body); color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:6px; padding:2px 6px}
   .vf-foot{display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap} .vf-foot .sub{flex:1}
   .vf-done{margin-top:10px} .vf-done summary{cursor:pointer; font-size:12.5px; color:var(--muted); font-weight:600}
+  .vf-done-akt{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0; padding:8px 10px; background:var(--surface2); border-radius:8px} .vf-done-akt .sub{flex:1; font-size:12.5px}
   .vf-done ul{list-style:none; margin:6px 0 0; padding:0; font-size:12.5px} .vf-done li{display:flex; gap:10px; align-items:center; padding:4px 0; border-bottom:1px solid var(--border)} .vf-done li:last-child{border-bottom:none} .vf-done li .sub{flex:1}
   .begr{margin-top:14px; border-top:1px solid var(--border); padding-top:12px}
   .begr-head{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:8px}
@@ -738,7 +739,7 @@
         <div class="card section">
           <h2>Version und Update</h2>
           <p class="sub" id="upd-version">Helfer-Cockpit</p>
-          <p class="sub" id="upd-neu">Neu in 2.1.11: Telefonnummern werden auf Ziffern verglichen (Zusätze wie «Mama» zählen nicht) und im Import nur mit Ziffern und Leerzeichen geschrieben.</p>
+          <p class="sub" id="upd-neu">Neu in 2.1.12: Der letzte Fairgate-Export wird gemerkt — «Neu abrufen» gleicht automatisch neu ab, ohne erneuten Upload. «Weiss nicht»-Antworten lassen sich alle auf einmal wieder öffnen.</p>
           <div class="einr-row"><button class="btn" id="upd-pruefen"><svg class="ic"><use href="#i-refresh"/></svg>Nach Update suchen</button><span class="sub" id="upd-stand"></span></div>
           <div id="upd-ergebnis"></div>
         </div>

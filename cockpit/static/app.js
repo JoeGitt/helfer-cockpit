@@ -199,6 +199,8 @@ function abrufen(still = false) {
       const d = await holeJson("/api/abruf", { method: "POST" });
       anwenden(d); zeigeFehler("abruf-transport", null);
       ok = !d.fehler; letzterAbrufFehler = d.fehler || "";
+      if (d.abgleich) abgleichAktualisiert(d.abgleich, !still);
+      if (d.abgleich_fehler) zeigeFehler("fairgate", d.abgleich_fehler);
       if (ok && !still) toast(`Abgerufen: ${d.alle_accounts.length} Accounts, ${d.mitglieder.length} Mitglieder.`);
       ladeProtokoll();
     } catch (e) { letzterAbrufFehler = e.message; zeigeFehler("abruf-transport", e.message); }
@@ -581,8 +583,9 @@ function renderVorfragen(d) {
       <div class="vf-foot"><span class="sub" id="vf-stand">0 von ${vf.length} beantwortet</span><button class="btn primary" id="vf-btn" disabled>${ic("check")}Antworten übernehmen</button></div>
       <p class="hint" style="margin:8px 0 0">«Andere Person» merkt sich das Cockpit dauerhaft — die Frage kommt nicht wieder. «Zweitaccount» erledigt sich mit dem Import von selbst.</p></div>`;
   }
+  const unklar = beantwortet.filter(([, e]) => e.antwort === "unklar").map(([id]) => id);
   if (beantwortet.length) {
-    html += `<details class="vf-done"><summary>${beantwortet.length} Vorfragen beantwortet — ändern</summary><ul>${beantwortet.map(([id, e]) => `<li><b>${esc(e.name || `Account ${id}`)}</b><span class="sub">${esc(FALL_LABEL[e.fall] || "")}${e.kandidaten ? ` wie ${esc(e.kandidaten)}` : ""} → ${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.fg && MIT_FG.has(e.antwort) ? ` (${esc(e.fg)})` : ""}${e.gespeichert ? " · dauerhaft gemerkt" : ""}</span><button class="btn" data-vf-reset="${esc(id)}">Nochmals fragen</button></li>`).join("")}</ul></details>`;
+    html += `<details class="vf-done" ${unklar.length ? "open" : ""}><summary>${beantwortet.length} Vorfragen beantwortet — ändern</summary>${unklar.length ? `<div class="vf-done-akt"><button class="btn" data-vf-reset-alle="${esc(unklar.join(","))}">${ic("refresh")}Alle «Weiss nicht» wieder öffnen (${unklar.length})</button><span class="sub">Die Fragen erscheinen oben wieder und können neu beantwortet werden.</span></div>` : ""}<ul>${beantwortet.map(([id, e]) => `<li><b>${esc(e.name || `Account ${id}`)}</b><span class="sub">${esc(FALL_LABEL[e.fall] || "")}${e.kandidaten ? ` wie ${esc(e.kandidaten)}` : ""} → ${esc(ANTWORT_LABEL[e.antwort] || e.antwort)}${e.fg && MIT_FG.has(e.antwort) ? ` (${esc(e.fg)})` : ""}${e.gespeichert ? " · dauerhaft gemerkt" : ""}</span><button class="btn" data-vf-reset="${esc(id)}">Nochmals fragen</button></li>`).join("")}</ul></details>`;
   }
   el.innerHTML = html;
   const stand = () => {
@@ -601,6 +604,29 @@ function renderVorfragen(d) {
     sendeEntscheide({ entscheide });
   });
   el.querySelectorAll("[data-vf-reset]").forEach((b) => b.addEventListener("click", () => sendeEntscheide({ entscheide: { [b.dataset.vfReset]: null } })));
+  el.querySelectorAll("[data-vf-reset-alle]").forEach((b) => b.addEventListener("click", () => oeffneUnklare(b.dataset.vfResetAlle.split(","))));
+}
+// Alle Antworten «Weiss nicht» zurücknehmen: die Vorfragen erscheinen in Schritt 1 wieder
+async function oeffneUnklare(ids) {
+  if (!ids.length) return;
+  await sendeEntscheide({ entscheide: Object.fromEntries(ids.map((id) => [id, null])) });
+  if (W.step !== 1) wizZeige(1);
+  const box = document.querySelector(".vf-box"); if (box) box.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+// Nach jedem Portal-Abruf rechnet der Server den Abgleich mit dem gespeicherten Fairgate-Export neu.
+function abgleichAktualisiert(a, melden = true) {
+  const neuerRun = wizRunId(a), geaendert = W.runId !== neuerRun;
+  if (geaendert) { W.checks = {}; W.wahl = {}; W.offen = {}; W.phase = null; W.ack = false; }
+  W.abgleich = a; W.runId = neuerRun;
+  if (a.fairgate_datei) W.dateiName = a.fairgate_datei;
+  wizSpeichern();
+  zeigeFairgateGeladen(a.fairgate_datei || W.dateiName);
+  renderPlausi(a);
+  if (W.step === 2) renderChecklist();
+  if (melden && geaendert && W.step >= 1 && W.step <= 2) toast(`Abgleich mit dem neuen Portal-Stand neu gerechnet (Fairgate-Export «${a.fairgate_datei || W.dateiName}»).`);
+}
+function zeigeFairgateGeladen(name) {
+  $("dropzone").innerHTML = ic("check") + `<br><b>${esc(name || "Fairgate-Export")}</b> geladen<span class="hint">Wird bei jedem «Neu abrufen» automatisch wieder abgeglichen. Neuerer Export: klicken oder hierher ziehen.</span>`;
 }
 async function sendeEntscheide(body) {
   const btn = $("vf-btn"); if (btn) { btn.disabled = true; btn.innerHTML = ic("refresh", "spin") + "Import-Datei wird neu erzeugt …"; }
@@ -608,8 +634,9 @@ async function sendeEntscheide(body) {
     const d = await holeJson("/api/abgleich/entscheide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     W.abgleich = d; W.runId = wizRunId(d); wizSpeichern();
     renderPlausi(d);
-    const n = Object.values(body.entscheide || {}).filter(Boolean).length;
-    toast(n ? `${n} Antworten übernommen — Import-Datei neu erzeugt.` : "Vorfrage wieder offen.");
+    const n = Object.values(body.entscheide || {}).filter(Boolean).length, weg = Object.values(body.entscheide || {}).filter((x) => !x).length;
+    toast(n ? `${n} Antworten übernommen — Import-Datei neu erzeugt.` : weg > 1 ? `${weg} Vorfragen wieder offen.` : "Vorfrage wieder offen.");
+    if (W.step === 2) renderChecklist();
     ladeProtokoll();
   } catch (e) { zeigeFehler("fairgate", e.message); renderPlausi(W.abgleich); }
 }
@@ -625,7 +652,7 @@ async function fairgateHochladen(datei) {
     const neuerRun = wizRunId(d);
     if (W.runId !== neuerRun) { W.checks = {}; W.wahl = {}; W.offen = {}; W.phase = null; W.ack = false; }
     W.runId = neuerRun; W.abgleich = d; W.dateiName = datei.name; wizSpeichern();
-    dz.innerHTML = ic("check") + `<br><b>${esc(datei.name)}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
+    zeigeFairgateGeladen(datei.name);
     renderPlausi(d);
     ladeProtokoll(); ladeStand();
   } catch (e) {
@@ -752,7 +779,9 @@ function renderChecklist() {
   }
   // C · Klärfälle
   const cKeys = [...d.klaerliste.map((_, i) => `k:${i}`), ...befunde.map((b) => b.key)];
+  const unklareIds = Object.entries(d.entscheide || {}).filter(([, e]) => e && e.antwort === "unklar").map(([id]) => id);
   let cHtml = cKeys.length ? `<p class="hint">Erst nach dem Import, damit die Import-Datei gültig bleibt. Jeden Punkt aufklappen: Was trifft zu? — dann erscheint nur die Anleitung für diesen Fall.</p>` : `<p class="hint">Keine Klärfälle — nichts zu entscheiden.</p>`;
+  if (unklareIds.length) cHtml += `<div class="vf-done-akt"><span class="sub">${unklareIds.length} davon hast du mit «Weiss nicht» zurückgestellt.</span><button class="btn" data-vf-reset-alle="${esc(unklareIds.join(","))}">${ic("refresh")}Alle wieder als Vorfrage öffnen</button></div>`;
   if (d.klaerliste.length) cHtml += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
   if (befunde.length) cHtml += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie?") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
   const hinweise = d.hinweise || [];
@@ -957,6 +986,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("wiz-3-liste").addEventListener("click", (e) => {
+    const alle = e.target.closest("[data-vf-reset-alle]"); if (alle) { oeffneUnklare(alle.dataset.vfResetAlle.split(",")); return; }
     const b = e.target.closest("button.opt"); if (!b) return;
     const key = b.dataset.wahl, i = Number(b.dataset.i);
     W.wahl[key] = W.wahl[key] === i ? null : i; wizSpeichern();
@@ -1010,7 +1040,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (wieder) {
       W.abgleich = wieder;
-      $("dropzone").innerHTML = ic("check") + `<br><b>${esc(W.dateiName || "Fairgate-Export")}</b> geladen<span class="hint">Andere Datei: klicken oder hierher ziehen</span>`;
+      zeigeFairgateGeladen(wieder.fairgate_datei || W.dateiName);
       renderPlausi(wieder);
       W.portalOk = geladen();
       $("wiz-1-status").className = "statusline ok"; $("wiz-1-status").innerHTML = ic("check") + `<span><b>${S.daten.alle_accounts.length} Accounts</b> aus dem Portal · Stand ${esc(S.daten.stand)}</span>`;
@@ -1019,6 +1049,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       wizZeige(Math.max(gespeichert.step, 1));
       pruefeSchritt1();
       toast(`Abgleich fortgesetzt bei Schritt ${gespeichert.step}.`);
+    } else if (W.abgleich) {
+      // Portal hat sich seit dem letzten Mal geändert: Abgleich wurde mit dem gespeicherten Export neu gerechnet
+      W.portalOk = geladen(); W.maxStep = 1; wizZeige(1); pruefeSchritt1();
+      $("wiz-1-status").className = "statusline ok"; $("wiz-1-status").innerHTML = ic("check") + `<span><b>${S.daten.alle_accounts.length} Accounts</b> aus dem Portal · Stand ${esc(S.daten.stand)}</span>`;
+      toast("Portal-Stand hat sich geändert — Abgleich mit dem gespeicherten Fairgate-Export neu gerechnet.");
     } else if (gespeichert.step >= 2 && gespeichert.dateiName) {
       $("wiz-letzter").insertAdjacentHTML("beforeend", `<span class="l">Unterbrochen</span><span>Ein Abgleich mit «${esc(gespeichert.dateiName)}» war in Schritt ${gespeichert.step}. Das Cockpit wurde seither neu gestartet — denselben Export in Schritt 1 nochmals laden, die Häkchen bleiben erhalten.</span>`);
     }

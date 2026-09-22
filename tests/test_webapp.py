@@ -602,3 +602,64 @@ def test_regeln_speichern_raeumt_ausgabe_auf(server, tmp_path):
     assert d["geloescht"] == ["import-2020-01-01.xlsx"] and (ausgabe / "import-2099-01-01.xlsx").exists()
     with urllib.request.urlopen(server + "/api/regeln") as r:
         assert json.loads(r.read())["aufbewahrung_tage"] == 30
+
+
+# ---- Fairgate-Export merken: jeder Portal-Abruf gleicht automatisch neu ab (22.09.2026) ----
+
+class _StubClient:
+    def __init__(self, helpers):
+        self._h = helpers
+    def helpers(self):
+        return self._h
+    def events(self):
+        return []
+    def alle_assignments(self, events):
+        return []
+
+def test_abruf_gleicht_mit_gespeichertem_fairgate_export_neu_ab(tmp_path):
+    helpers = [_acc_json(1, "Lina", "Brunner", "lina@example.ch", "FG-1", ziel=2),
+               _acc_json(2, "Noah", "Keller", "noah@example.ch", "FG-2", ziel=1)]      # Zielwert falsch → Korrektur
+    fairgate = _fairgate_xlsx_bytes([
+        ["x", 1, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"],
+        ["x", 2, "noah@example.ch", "Noah", "Keller", "", "Aktivmitglied", None, None, "2000-01-01"]])
+    z = _zustand(tmp_path); z.helpers = helpers; z.assignments = []
+    portal = {"h": helpers}
+    z.api_client_factory = lambda: _StubClient(portal["h"])
+    srv = starte_server(z, port=0); threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        req = urllib.request.Request(url + "/api/fairgate", data=fairgate, method="POST")
+        with urllib.request.urlopen(req) as r:
+            d = json.loads(r.read())
+        assert d["korrekturen"] == 1 and d["fairgate_datei"].startswith("fairgate-export-")
+        assert len(list((tmp_path / "Ausgabe").glob("fairgate-export-*.xlsx"))) == 1
+        # Portal wurde inzwischen korrigiert → «Neu abrufen» rechnet ohne neuen Upload neu
+        portal["h"] = [helpers[0], {**helpers[1], "stateCache": {"requestedValue": 2, "plannedValue": 0}}]
+        with urllib.request.urlopen(urllib.request.Request(url + "/api/abruf", data=b"", method="POST")) as r:
+            a = json.loads(r.read())
+        assert a["abgleich"]["korrekturen"] == 0 and a["fairgate_datei"] == d["fairgate_datei"]
+        assert a["letzter_abgleich"]["korrekturen"] == 0
+    finally:
+        srv.shutdown()
+    # Neustart: gespeicherten Export wieder laden
+    z2 = _zustand(tmp_path)
+    assert z2.lade_letzten_fairgate() == d["fairgate_datei"] and len(z2.fairgate_kontakte) == 2
+
+def test_abruf_ohne_fairgate_export_liefert_keinen_abgleich(tmp_path):
+    z = _zustand(tmp_path)
+    z.api_client_factory = lambda: _StubClient(z.helpers)
+    srv = starte_server(z, port=0); threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url + "/api/abruf", data=b"", method="POST")) as r:
+            a = json.loads(r.read())
+        assert "abgleich" not in a and a["fairgate_datei"] == ""
+    finally:
+        srv.shutdown()
+
+def test_nur_eine_kopie_des_fairgate_exports(tmp_path):
+    z = _zustand(tmp_path)
+    (tmp_path / "Ausgabe").mkdir()
+    (tmp_path / "Ausgabe" / "fairgate-export-2026-01-01.xlsx").write_bytes(b"alt")
+    name = z.speichere_fairgate(b"neu")
+    assert [p.name for p in (tmp_path / "Ausgabe").glob("fairgate-export-*.xlsx")] == [name]

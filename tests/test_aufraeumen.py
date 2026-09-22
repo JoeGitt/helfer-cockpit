@@ -28,3 +28,7 @@ def test_null_tage_heisst_nie_und_fehlender_ordner_ist_ok(tmp_path):
 def test_frist_genau_am_rand(tmp_path):
     _anlegen(tmp_path, ["import-2026-06-18.xlsx", "import-2026-06-17.xlsx"])     # 90 bzw. 91 Tage vor HEUTE
     assert [p.name for p in abgelaufene(tmp_path, 90, HEUTE)] == ["import-2026-06-17.xlsx"]
+
+def test_gespeicherter_fairgate_export_unterliegt_der_frist(tmp_path):
+    _anlegen(tmp_path, ["fairgate-export-2026-05-01.xlsx", "fairgate-export-2026-09-10.xlsx"])
+    assert [p.name for p in abgelaufene(tmp_path, 90, HEUTE)] == ["fairgate-export-2026-05-01.xlsx"]

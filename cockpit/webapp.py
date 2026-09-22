@@ -44,7 +44,8 @@ class Zustand:
     assignments_fehler: bool = False   # D6 degradiert: letzter Einsätze-Abruf ist gescheitert
     org_slug: str = "pfadi-winterthur-handball"   # Teil der Portal-URL (Helfer-Detailseite)
     fairgate_kategorien: dict = None   # FG → Mitgliedschaft aus dem letzten Fairgate-Export
-    fairgate_kontakte: list = None     # Kontakte des letzten Exports (nur im Speicher, für die Kontrolle)
+    fairgate_kontakte: list = None     # Kontakte des letzten Exports (für Kontrolle und Neu-Abgleich nach jedem Abruf)
+    fairgate_datei: str = ""           # Name der gespeicherten Kopie in «Ausgabe» (überlebt Neustart, Aufbewahrungsfrist gilt)
     letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
     letztes_ergebnis: dict = None      # vollständige Antwort des letzten Abgleichs (für Seiten-Neuladen)
     entscheide: dict = None            # Antworten auf Vorfragen dieser Sitzung {helper_id: {antwort, fg}}
@@ -62,6 +63,43 @@ class Zustand:
         self.regeln_pfad = p / "regeln.json"
         self.protokoll_pfad = p / "protokoll.jsonl"
         self.ausgabe_dir = p / "Ausgabe"
+
+    def speichere_fairgate(self, daten):
+        """Letzten Fairgate-Export in «Ausgabe» ablegen, damit jeder Portal-Abruf ihn wieder abgleicht —
+        auch nach einem Neustart. Ältere Kopien werden entfernt (nur eine Kopie mit Personendaten)."""
+        if not self.ausgabe_dir:
+            return ""
+        self.ausgabe_dir.mkdir(parents=True, exist_ok=True)
+        ziel = self.ausgabe_dir / f"fairgate-export-{datetime.date.today().isoformat()}.xlsx"
+        tmp = ziel.with_suffix(".tmp")
+        tmp.write_bytes(daten); tmp.replace(ziel)
+        for alt in self.ausgabe_dir.glob("fairgate-export-*.xlsx"):
+            if alt != ziel:
+                try:
+                    alt.unlink()
+                except OSError:
+                    pass
+        self.fairgate_datei = ziel.name
+        return ziel.name
+
+    def lade_letzten_fairgate(self):
+        """Neuesten gespeicherten Fairgate-Export wieder einlesen. Liefert den Dateinamen oder ""."""
+        if not self.ausgabe_dir:
+            return ""
+        try:
+            kandidaten = sorted(Path(self.ausgabe_dir).glob("fairgate-export-*.xlsx"))
+        except OSError:
+            return ""
+        for p in reversed(kandidaten):
+            try:
+                kontakte = lies_fairgate(io.BytesIO(p.read_bytes()))
+            except Exception:
+                continue
+            self.fairgate_kontakte = kontakte
+            self.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
+            self.fairgate_datei = p.name
+            return p.name
+        return ""
 
     def einrichtung_json(self):
         return {"version": VERSION, "daten_ordner": str(self.daten_ordner) if self.daten_ordner else "",
@@ -208,6 +246,7 @@ def abgleich_ausfuehren(zustand, kontakte, protokollieren=True):
     antwort = _abgleich_json(zustand, ergebnis)
     antwort["dateien"] = {"import": str(import_pfad), "liste": str(liste_pfad),
                           "kontakte": str(kontakte_pfad), "begruendung": str(begruendung_pfad)}
+    antwort["fairgate_datei"] = zustand.fairgate_datei
     zustand.letztes_ergebnis = antwort
     zustand.letzter_abgleich = {
         "zeit": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -232,7 +271,7 @@ def baue_dashboard(z):
         return {"stand": "", "fehler": z.fehler, "kennzahlen": {}, "mitglieder": [],
                 "hinweise": [], "wer_leistet": {}, "alle_accounts": [],
                 "kategorie_erfuellung": [], "api_verfuegbar": z.api_client_factory is not None,
-                "letzter_abgleich": z.letzter_abgleich}
+                "letzter_abgleich": z.letzter_abgleich, "fairgate_datei": z.fairgate_datei}
     regeln, regeln_fehler = lade_regeln_mit_fehler(z.regeln_pfad)
     accounts = [classify(h) for h in z.helpers]
     mitglieder = build_mitglieder(accounts)
@@ -293,6 +332,7 @@ def baue_dashboard(z):
             "kategorie_erfuellung": kategorie_erfuellung,
             "api_verfuegbar": z.api_client_factory is not None,
             "letzter_abgleich": z.letzter_abgleich,
+            "fairgate_datei": z.fairgate_datei,
             "hinweise": [{"code": h.code, "schweregrad": h.schweregrad,
                           "text": h.text, "betroffene": h.betroffene} for h in hinweise]}
 
@@ -431,7 +471,19 @@ def starte_server(zustand, port=0):
                         zustand.assignments_fehler = True
                     zustand.stand = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
                     zustand.fehler = ""
+                    # Mit dem neuen Portal-Stand gleich wieder mit dem letzten Fairgate-Export abgleichen —
+                    # niemand muss die Excel-Datei dafür nochmals hochladen
+                    abgleich, abgleich_fehler = None, ""
+                    if zustand.fairgate_kontakte:
+                        try:
+                            abgleich = abgleich_ausfuehren(zustand, zustand.fairgate_kontakte, protokollieren=False)
+                        except ValueError as e:
+                            abgleich_fehler = str(e)
                     dashboard = baue_dashboard(zustand)
+                    if abgleich:
+                        dashboard["abgleich"] = abgleich
+                    if abgleich_fehler:
+                        dashboard["abgleich_fehler"] = abgleich_fehler
                     protokoll.logge(zustand.protokoll_pfad, "api-abruf",
                                     {"accounts": len(zustand.helpers),
                                      "hinweise": dashboard["kennzahlen"]["hinweise"]})
@@ -443,6 +495,7 @@ def starte_server(zustand, port=0):
                 daten = self._body()
                 try:
                     kontakte = lies_fairgate(io.BytesIO(daten))
+                    zustand.speichere_fairgate(daten)
                     return self._json(abgleich_ausfuehren(zustand, kontakte))
                 except (FalscheDatei, ValueError) as e:
                     return self._json({"fehler": str(e)}, 400)
@@ -459,6 +512,7 @@ def starte_server(zustand, port=0):
                 zustand.setze_daten_ordner(meldung)
                 standort_mod.speichere_standort(meldung)
                 ausgabe_aufraeumen(zustand)
+                zustand.lade_letzten_fairgate()
                 protokoll.logge(zustand.protokoll_pfad, "einrichtung", {"uebernommen": len(uebernommen)})
                 return self._json({**zustand.einrichtung_json(), "uebernommen": uebernommen})
             if u.path == "/api/einrichtung/key":

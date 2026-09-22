@@ -118,6 +118,13 @@ def main():
             ausgabe_aufraeumen(zustand)
         except Exception as e:
             print(f"Aufräumen der Ausgabe übersprungen: {e}")
+    # letzten Fairgate-Export wieder laden: der erste Portal-Abruf gleicht dann automatisch ab
+    if zustand.lade_letzten_fairgate() and zustand.helpers:
+        try:
+            from cockpit.webapp import abgleich_ausfuehren
+            abgleich_ausfuehren(zustand, zustand.fairgate_kontakte, protokollieren=False)
+        except Exception as e:
+            print(f"Abgleich beim Start übersprungen: {e}")
     server = _server_starten(zustand, _port_aus_argv())
     def beenden():
         # Server sauber stoppen; falls etwas hängt, den Prozess nach kurzer Frist hart beenden,

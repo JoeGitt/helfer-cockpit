@@ -5,7 +5,7 @@ import datetime
 import re
 from pathlib import Path
 
-MUSTER = re.compile(r"^(?:import|handarbeitsliste|kontaktdaten-abweichungen|saeumige-[a-z]+|gesamtexport)"
+MUSTER = re.compile(r"^(?:import|handarbeitsliste|kontaktdaten-abweichungen|saeumige-[a-z]+|gesamtexport|fairgate-export)"
                     r"-(\d{4}-\d{2}-\d{2})(?:-begruendung)?\.(?:xlsx|html|csv)$")
 
 
