@@ -46,6 +46,7 @@ class Zustand:
     fairgate_kategorien: dict = None   # FG → Mitgliedschaft aus dem letzten Fairgate-Export
     fairgate_kontakte: list = None     # Kontakte des letzten Exports (für Kontrolle und Neu-Abgleich nach jedem Abruf)
     fairgate_datei: str = ""           # Name der gespeicherten Kopie in «Ausgabe» (überlebt Neustart, Aufbewahrungsfrist gilt)
+    fairgate_mtime: float = None       # Änderungszeit dieser Kopie — erkennt neuere Uploads anderer im Team
     letzter_abgleich: dict = None      # Zusammenfassung des letzten Laufs dieser Sitzung
     letztes_ergebnis: dict = None      # vollständige Antwort des letzten Abgleichs (für Seiten-Neuladen)
     entscheide: dict = None            # Antworten auf Vorfragen dieser Sitzung {helper_id: {antwort, fg}}
@@ -73,6 +74,10 @@ class Zustand:
         ziel = self.ausgabe_dir / f"fairgate-export-{datetime.date.today().isoformat()}.xlsx"
         tmp = ziel.with_suffix(".tmp")
         tmp.write_bytes(daten); tmp.replace(ziel)
+        try:
+            self.fairgate_mtime = ziel.stat().st_mtime
+        except OSError:
+            self.fairgate_mtime = None
         for alt in self.ausgabe_dir.glob("fairgate-export-*.xlsx"):
             if alt != ziel:
                 try:
@@ -82,14 +87,21 @@ class Zustand:
         self.fairgate_datei = ziel.name
         return ziel.name
 
-    def lade_letzten_fairgate(self):
-        """Neuesten gespeicherten Fairgate-Export wieder einlesen. Liefert den Dateinamen oder ""."""
+    def lade_letzten_fairgate(self, nur_wenn_neuer=False):
+        """Neuesten gespeicherten Fairgate-Export wieder einlesen. Liefert den Dateinamen oder "".
+        nur_wenn_neuer: nichts tun, wenn genau diese Datei (Name und Änderungszeit) schon geladen ist."""
         if not self.ausgabe_dir:
             return ""
         try:
             kandidaten = sorted(Path(self.ausgabe_dir).glob("fairgate-export-*.xlsx"))
         except OSError:
             return ""
+        if nur_wenn_neuer and kandidaten and self.fairgate_kontakte:
+            try:
+                if (kandidaten[-1].name, kandidaten[-1].stat().st_mtime) == (self.fairgate_datei, self.fairgate_mtime):
+                    return self.fairgate_datei
+            except OSError:
+                return self.fairgate_datei
         for p in reversed(kandidaten):
             try:
                 kontakte = lies_fairgate(io.BytesIO(p.read_bytes()))
@@ -98,6 +110,10 @@ class Zustand:
             self.fairgate_kontakte = kontakte
             self.fairgate_kategorien = {k.fg: k.kategorie for k in kontakte if k.kategorie}
             self.fairgate_datei = p.name
+            try:
+                self.fairgate_mtime = p.stat().st_mtime
+            except OSError:
+                self.fairgate_mtime = None
             return p.name
         return ""
 
@@ -474,6 +490,9 @@ def starte_server(zustand, port=0):
                     # Mit dem neuen Portal-Stand gleich wieder mit dem letzten Fairgate-Export abgleichen —
                     # niemand muss die Excel-Datei dafür nochmals hochladen
                     abgleich, abgleich_fehler = None, ""
+                    # Hat jemand im Team inzwischen einen neueren Export in den gemeinsamen Datenordner
+                    # gelegt, gilt dieser — nicht die Kopie, die dieses Cockpit beim Start geladen hat
+                    zustand.lade_letzten_fairgate(nur_wenn_neuer=True)
                     if zustand.fairgate_kontakte:
                         try:
                             abgleich = abgleich_ausfuehren(zustand, zustand.fairgate_kontakte, protokollieren=False)

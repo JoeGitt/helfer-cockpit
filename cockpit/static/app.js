@@ -711,7 +711,7 @@ function portalBefunde(d) {
       const gefragt = ohne && ((d.vorfragen || []).some((v) => v.helper_id === ohne.id) || (d.entscheide || {})[String(ohne.id)]);
       if (erledigt || gefragt) return;                         // läuft über die Vorfragen in Schritt 1
       const fg = fgs[0] || "FG-…", mailOhne = ohne ? ohne.email : "?", mailMit = mit ? mit.email : "?";
-      items.push({ key: `d:D10:${i}`, titel: `${name}: zwei Accounts — einer mit ${fg}, einer ohne. Zweitaccount oder Ersatz?`, wo: "Portal",
+      items.push({ key: `d:D10:${name}`, titel: `${name}: zwei Accounts — einer mit ${fg}, einer ohne. Zweitaccount oder Ersatz?`, wo: "Portal",
         fakten: [ohne ? `Account ohne FG-Nummer: E-Mail ${ohne.email} · ${eins(ohne)} — Link «Account ohne FG» rechts` : `Account ohne FG-Nummer: ${b}`,
                  mit ? `Account mit ${mit.fg}: E-Mail ${mit.email} · ${eins(mit)} — Link «${mit.fg}» rechts` : `Account mit ${fg}`,
                  "Entscheidungshilfe: Steht in der E-Mail des Accounts ohne FG-Nummer der eigene Vorname, ist es dieselbe Person mit neuer Adresse. Steht ein anderer Vorname zum gleichen Nachnamen (Familienadresse), ist es der Zweitaccount eines Elternteils.",
@@ -723,7 +723,7 @@ function portalBefunde(d) {
     });
     if (h.code === "D3") h.betroffene.forEach((fg, i) => {
       const konten = acc.filter((x) => x.fg === fg && x.typ === "mitglied");
-      items.push({ key: `d:D3:${i}`, titel: `${fg}: ${konten.length} Mitglieds-Accounts mit derselben FG-Nummer`, wo: "Portal",
+      items.push({ key: `d:D3:${fg}`, titel: `${fg}: ${konten.length} Mitglieds-Accounts mit derselben FG-Nummer`, wo: "Portal",
         fakten: konten.map((x) => `${x.name}: E-Mail ${x.email} · ${eins(x)}`).concat(["Das Kontingent rechnet bis zur Bereinigung mit dem höchsten Zielwert"]),
         optionen: ["Dieselbe Person → Einsätze auf einen Account umhängen (Portal: Event öffnen, Einsatz bearbeiten, Person wechseln), dann den anderen Account löschen (Helfende, Person, «Helfer:in löschen» — unwiderruflich)",
                    "Zwei Personen (z. B. Elternteil) → beim Nicht-Mitglied Gruppe «Mitglied» entfernen, Gruppe «Freiwillige» setzen, Zielwert 0; die FG-Nummer bleibt (Zweitaccount)"],
@@ -735,11 +735,13 @@ function portalBefunde(d) {
 function renderChecklist() {
   const d = W.abgleich; if (!d) return;
   $("wiz-3-lead").innerHTML = `<b>${esc(d.zusammenfassung)}</b> Drei Abschnitte, in dieser Reihenfolge: erst im Portal von Hand, dann die Import-Datei, dann die Klärfälle. Es ist immer nur ein Abschnitt offen.`;
-  const hand = d.handarbeit.map((h, i) => ({ ...h, key: `h:${i}` }));
+  // Schlüssel nach Inhalt, nicht nach Position: ändert sich die Liste (Vorfragen, Neu abrufen), bleiben
+  // Häkchen beim richtigen Punkt statt auf den nächsten zu rutschen
+  const hand = d.handarbeit.map((h) => ({ ...h, key: `h:${h.art}:${h.helper_id || h.name}:${h.fg}` }));
   const schluessel = hand.filter((h) => h.art === "schluessel"), austritte = hand.filter((h) => h.art === "austritt");
   const befunde = portalBefunde(d);
-  const warn = [...(d.duplikat_warnungen || []).map((t, i) => ({ key: `w:${i}`, t, k: "Duplikat-Warnung" })),
-    ...(d.unbekannte_kategorien || []).map((t, i) => ({ key: `u:${i}`, t, k: "Unbekannte Kategorie" }))];
+  const warn = [...(d.duplikat_warnungen || []).map((t) => ({ key: `w:${t}`, t, k: "Duplikat-Warnung" })),
+    ...(d.unbekannte_kategorien || []).map((t) => ({ key: `u:${t}`, t, k: "Unbekannte Kategorie" }))];
   const nImport = d.neueintritte + d.korrekturen, imp = basename(d.dateien.import), liste = basename(d.dateien.liste), kont = basename(d.dateien.kontakte || "");
   const sub = (titel, n, why) => `<div class="cl-sub">${titel} <span class="cnt">${n}</span> ${why ? `<span class="why">${why}</span>` : ""}</div>`;
   // A · Portal von Hand
@@ -778,14 +780,14 @@ function renderChecklist() {
     bHtml += `<ul class="checklist">${clItem("imp", `Import-Datei im Portal hochgeladen`, `${nImport} Zeilen — Neueintritte werden angelegt, Korrekturen aktualisiert.`)}</ul>`;
   }
   // C · Klärfälle
-  const cKeys = [...d.klaerliste.map((_, i) => `k:${i}`), ...befunde.map((b) => b.key)];
+  const cKeys = [...d.klaerliste.map((kf) => `k:${kf.titel}`), ...befunde.map((b) => b.key)];
   const unklareIds = Object.entries(d.entscheide || {}).filter(([, e]) => e && e.antwort === "unklar").map(([id]) => id);
   let cHtml = cKeys.length ? `<p class="hint">Erst nach dem Import, damit die Import-Datei gültig bleibt. Jeden Punkt aufklappen: Was trifft zu? — dann erscheint nur die Anleitung für diesen Fall.</p>` : `<p class="hint">Keine Klärfälle — nichts zu entscheiden.</p>`;
   if (unklareIds.length) cHtml += `<div class="vf-done-akt"><span class="sub">${unklareIds.length} davon hast du mit «Weiss nicht» zurückgestellt.</span><button class="btn" data-vf-reset-alle="${esc(unklareIds.join(","))}">${ic("refresh")}Alle wieder als Vorfrage öffnen</button></div>`;
-  if (d.klaerliste.length) cHtml += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${i}`, kf)).join("")}</ul>`;
+  if (d.klaerliste.length) cHtml += (befunde.length ? sub("Offene Fragen", d.klaerliste.length, "") : "") + `<ul class="checklist">${d.klaerliste.map((kf, i) => klaerItem(`k:${kf.titel}`, kf)).join("")}</ul>`;
   if (befunde.length) cHtml += sub("Doppelte Accounts", befunde.length, "— zwei Accounts, eine Person oder eine Familie?") + `<ul class="checklist">${befunde.map((b) => klaerItem(b.key, b)).join("")}</ul>`;
   const hinweise = d.hinweise || [];
-  if (hinweise.length) cHtml += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${i}`, h, false)).join("")}</ul></details>`;
+  if (hinweise.length) cHtml += `<details class="more"><summary>Info · ${hinweise.length} Hinweise — keine Handarbeit nötig, aber gut zu wissen</summary><ul class="checklist">${hinweise.map((h, i) => klaerItem(`i:${h.titel}`, h, false)).join("")}</ul></details>`;
   const abw = d.kontakt_abweichungen || [];
   if (abw.length) cHtml += `<details class="more"><summary>Info · ${abw.length} Kontaktdaten weichen ab (Portal ≠ Fairgate) — keine Handarbeit nötig</summary><p class="hint" style="margin:8px 0">Die Portal-Adresse ist die vom Mitglied selbst gewählte Login-Adresse. Falls Fairgate veraltet ist, dort nachführen: <a class="plink" href="${ausgabeLink(kont)}">${ic("download", "sm")}${esc(kont)}</a></p><ul class="checklist">${abw.slice(0, 50).map((a) => `<li><span></span><div class="t"><b>${esc(a.name)} (${esc(a.fg)})</b><span>Portal ${esc(a.portal_mail)} · Fairgate ${esc(a.fairgate_mail)}</span></div><div class="a">${plink(a.portal_url)}</div></li>`).join("")}</ul></details>`;
   // Phasen: nur eine offen — die erste mit offenen Punkten, oder die gemerkte
@@ -856,11 +858,24 @@ async function wizKontrolle() {
       toast("Alles synchron — Abgleich abgeschlossen.");
     } else {
       const o = d.offen;
-      el.innerHTML = `<div class="statusline err">${ic("alert")}<span><b>Noch nicht synchron:</b> ${o.handarbeit} Handarbeit · ${o.neueintritte} Neueintritte · ${o.korrekturen} Korrekturen · ${o.klaerliste} Klärfälle offen.</span></div>
-        <p class="hint" style="margin:10px 0 0">Typische Gründe: Import-Datei noch nicht hochgeladen, ein Punkt im Portal noch nicht erledigt, oder das Portal braucht einen Moment. Die Checkliste wird mit dem aktuellen Stand neu aufgebaut — bereits Erledigtes bleibt abgehakt.</p>
+      // Import angekommen = keine Neueintritte/Korrekturen/Vorfragen mehr. Übrig bleiben dürfen Punkte,
+      // die nicht der Import löst (Austritte löschen, Klärfälle, die nur Fairgate beheben kann) — sonst
+      // liesse sich der Abgleich nie abschliessen.
+      const importOk = !o.neueintritte && !o.korrekturen && !o.vorfragen;
+      const rest = [o.handarbeit ? `${o.handarbeit} Handarbeit (z. B. Austritte löschen)` : "", o.klaerliste ? `${o.klaerliste} Klärfälle` : ""].filter(Boolean).join(" · ");
+      el.innerHTML = importOk
+        ? `<div class="statusline ok">${ic("check")}<span><b>Import ist angekommen.</b> Noch offen: ${esc(rest)}.</span></div>
+          <p class="hint" style="margin:10px 0 0">Diese Punkte löst kein Import — erledige sie, wenn möglich, oder schliesse jetzt ab. Was offen bleibt, erscheint beim nächsten Abgleich wieder.</p>
+          <div class="wiz-actions" style="margin-top:12px"><button class="btn primary" id="wiz-btn-abschliessen">${ic("check")}Abschliessen</button><button class="btn" id="wiz-btn-nochmal">Checkliste aktualisieren</button><button class="btn" id="wiz-btn-kontrolle2">${ic("refresh")}Nochmals prüfen</button></div>`
+        : `<div class="statusline err">${ic("alert")}<span><b>Noch nicht synchron:</b> ${o.neueintritte} Neueintritte · ${o.korrekturen} Korrekturen${o.vorfragen ? ` · ${o.vorfragen} Vorfragen` : ""} · ${o.handarbeit} Handarbeit · ${o.klaerliste} Klärfälle offen.</span></div>
+        <p class="hint" style="margin:10px 0 0">Typische Gründe: Import-Datei noch nicht hochgeladen, ein Punkt im Portal noch nicht erledigt, oder das Portal braucht einen Moment. Die Checkliste wird mit dem aktuellen Stand neu aufgebaut.</p>
         <div class="wiz-actions" style="margin-top:12px"><button class="btn primary" id="wiz-btn-nochmal">Checkliste aktualisieren</button><button class="btn" id="wiz-btn-kontrolle2">${ic("refresh")}Nochmals prüfen</button></div>`;
-      $("wiz-btn-nochmal").addEventListener("click", () => { W.abgleich = { ...W.abgleich, ...d, dateien: W.abgleich.dateien }; renderChecklist(); wizZeige(2); });
+      $("wiz-btn-nochmal").addEventListener("click", () => { W.abgleich = { ...W.abgleich, ...d, dateien: W.abgleich.dateien }; W.checks = {}; W.wahl = {}; W.runId = wizRunId(W.abgleich); wizSpeichern(); o.vorfragen ? (renderPlausi(W.abgleich), wizZeige(1)) : (renderChecklist(), wizZeige(2)); });
       $("wiz-btn-kontrolle2").addEventListener("click", wizKontrolle);
+      if ($("wiz-btn-abschliessen")) $("wiz-btn-abschliessen").addEventListener("click", () => {
+        $("wiz-fertig-text").textContent = `Import angekommen. Offen geblieben: ${rest}.`;
+        W.checks = {}; W.abgleich = null; W.runId = null; wizZeige(FERTIG); toast("Abgleich abgeschlossen.");
+      });
     }
   } catch (e) {
     zeigeFehler("kontrolle", e.message);
@@ -991,7 +1006,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const key = b.dataset.wahl, i = Number(b.dataset.i);
     W.wahl[key] = W.wahl[key] === i ? null : i; wizSpeichern();
     const kf = b.closest("details.kf"), li = b.closest("li");
-    const quelle = W.abgleich && (key.startsWith("k:") ? W.abgleich.klaerliste[Number(key.slice(2))] : key.startsWith("i:") ? W.abgleich.hinweise[Number(key.slice(2))] : portalBefunde(W.abgleich).find((x) => x.key === key));
+    const quelle = W.abgleich && (key.startsWith("k:") ? W.abgleich.klaerliste.find((x) => `k:${x.titel}` === key) : key.startsWith("i:") ? (W.abgleich.hinweise || []).find((x) => `i:${x.titel}` === key) : portalBefunde(W.abgleich).find((x) => x.key === key));
     if (quelle) { W.offen[key] = true; li.outerHTML = klaerItem(key, quelle, !key.startsWith("i:")); }
   });
   $("wiz-3-liste").addEventListener("toggle", (e) => {

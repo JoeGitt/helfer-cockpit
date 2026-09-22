@@ -166,6 +166,39 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
     fg_mit_mitgliedsaccount = set(portal_nach_fg)
     fg_zugeordnet = set()     # Fairgate-FGs, die über einen FG-losen Account abgedeckt werden
 
+    # Fall F1 vorab entscheiden: Hat eine pflichtige FG noch keinen Mitglieds-Account, wird genau ein
+    # Account mit dieser (ersten) FG-Nummer das Mitglied — und zwar unabhängig davon, in welcher
+    # Reihenfolge das Portal die Accounts liefert. Vorrang: Name wie in Fairgate. Gibt es keinen
+    # Namenstreffer, aber einen FG-losen Account mit Name UND E-Mail wie in Fairgate, wird jener das
+    # Mitglied (Fall D-Nachtrag) und die FG-Accounts bleiben Zweitaccounts. Familien-Zweitaccounts
+    # (mehrere Nummern) werden nie Mitglied.
+    f1_wahl = {}
+    exakt_ohne_fg = set()
+    for a in accounts:
+        if not a.fg:
+            per_mail_a = set().union(*(mail_fgs.get(m, set()) for m in _portal_adressen(a))) if _portal_adressen(a) else set()
+            exakt_ohne_fg |= per_mail_a & name_fgs.get(_name(a.vorname, a.nachname), set())
+    for fg, k in pflichtig.items():
+        if fg in fg_mit_mitgliedsaccount:
+            continue
+        kandidaten = [a for a in accounts if a.fg == fg and a.typ != Typ.MITGLIED and len(a.fgs or []) <= 1]
+        if not kandidaten:
+            continue
+        namens = [a for a in kandidaten if _name(a.vorname, a.nachname) == _name(k.vorname, k.nachname)]
+        if not namens and fg in exakt_ohne_fg:
+            continue
+        wahl = sorted(namens or kandidaten, key=lambda a: (-_einsaetze(a), a.id or 0))[0]
+        f1_wahl[fg] = wahl.id
+        fg_mit_mitgliedsaccount.add(fg)
+        portal_nach_fg[fg] = wahl
+    # Duplikat-Wächter (Spez. Kap. 6.3): der Portal-Import erkennt Personen nur zeichengenau an
+    # Vorname + Nachname + E-Mail — ein Neueintritt, der sich nur in Gross-/Kleinschreibung oder
+    # Leerzeichen von einem bestehenden Account unterscheidet, würde ein Duplikat anlegen.
+    portal_tripel = {}
+    for a in accounts:
+        for m in _portal_adressen(a):
+            portal_tripel.setdefault((*_name(a.vorname, a.nachname), m), a)
+
     def klaer(titel, fakten, optionen, wo="Portal", helper_id=None, fg=""):
         """Klärfall = eine Entscheidung, die nur ein Mensch treffen kann. Immer mit: worum es
         geht (Fakten), was bei welcher Antwort zu tun ist (Optionen), und wo (Portal/Fairgate)."""
@@ -266,8 +299,9 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                 korrektur(a, grund, **felder)
                 # Telefon nur im Portal, nicht in Fairgate: bewusst KEINE Massnahme (Entscheid 10.09.2026)
                 _email_pruefen(e, a, k, regeln, heute)
-            elif a.fg in fg_mit_mitgliedsaccount:
-                # Fall F2: Zweitaccount eines bestehenden Mitglieds — Zielwert 0, Marker «Freiwillige»
+            elif f1_wahl.get(a.fg) != a.id:
+                # Fall F2: Zweitaccount eines (bestehenden oder vorab gewählten) Mitglieds — Zielwert 0,
+                # Marker «Freiwillige». Auch Familien-Zweitaccounts landen hier.
                 korrektur(a, "Zweitaccount: Zielwert 0, Gruppe «Freiwillige»",
                           zielwert="0" if a.zielwert != 0 else "",
                           gruppe=_zielgruppen(a, hinzu=(GRUPPE_FREIWILLIGE,), weg=(GRUPPE_UNBEKANNTE,)))
@@ -277,8 +311,6 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                 korrektur(a, "Ist das Mitglied zu dieser FG-Nummer: Gruppe «Mitglied», Zielwert setzen",
                           zielwert=str(regel.zielwert) if a.zielwert != regel.zielwert else "",
                           gruppe=_zielgruppen(a, hinzu=(GRUPPE_MITGLIED,), weg=(GRUPPE_FREIWILLIGE, GRUPPE_UNBEKANNTE)))
-                fg_mit_mitgliedsaccount.add(a.fg)
-                portal_nach_fg[a.fg] = a
         elif a.fg and a.fg in nicht_pflichtig_fgs:
             # Kategorie ohne Helferpflicht (z. B. Passivmitglied): kein Zielwert
             korrektur(a, "Kategorie ohne Helferpflicht: Zielwert 0",
@@ -541,6 +573,13 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                    + "in Fairgate eintragen (eigene oder Eltern); der nächste Abgleich legt den Account dann an"],
                   wo="Fairgate", fg=fg)
             continue
+        doppel = portal_tripel.get((*_name(k.vorname, k.nachname), mail.strip().lower()))
+        if doppel:
+            e.duplikat_warnungen.append(
+                f"{k.vorname} {k.nachname} ({fg}) nicht importiert: im Portal gibt es «{doppel.anzeigename}» ({doppel.email}) — "
+                "gleiche Person, nur anders geschrieben. Im Portal Vor-/Nachname bzw. E-Mail genau wie in Fairgate schreiben "
+                f"und «{fg}» in die Bemerkung eintragen; sonst legt der Import ein Duplikat an.")
+            continue
         e.neueintritte.append(ImportZeile(
             vorname=k.vorname, nachname=k.nachname, email=mail, telefon=tel.fuer_import(k.telefon),
             gruppe=regel.portal_gruppe, geburtsdatum=k.geburtsdatum,
@@ -562,7 +601,7 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
     if austritte: teile.append(f"{len(austritte)} Austritte")
     if e.korrekturen: teile.append(f"{len(e.korrekturen)} Korrekturen")
     e.zusammenfassung = ((", ".join(teile) if teile else "Alles synchron")
-                         + f" bei {e.geprueft} geprüften Mitgliedern.")
+                         + f" bei {e.geprueft} geprüften Fairgate-Kontakten.")
     return e
 
 

@@ -663,3 +663,25 @@ def test_nur_eine_kopie_des_fairgate_exports(tmp_path):
     (tmp_path / "Ausgabe" / "fairgate-export-2026-01-01.xlsx").write_bytes(b"alt")
     name = z.speichere_fairgate(b"neu")
     assert [p.name for p in (tmp_path / "Ausgabe").glob("fairgate-export-*.xlsx")] == [name]
+
+
+def test_abruf_nimmt_neueren_export_aus_dem_gemeinsamen_ordner(tmp_path):
+    helpers = [_acc_json(1, "Lina", "Brunner", "lina@example.ch", "FG-1", ziel=2)]
+    z = _zustand(tmp_path); z.helpers = helpers; z.assignments = []
+    z.api_client_factory = lambda: _StubClient(helpers)
+    alt = _fairgate_xlsx_bytes([["x", 1, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"]])
+    neu = _fairgate_xlsx_bytes([["x", 1, "lina@example.ch", "Lina", "Brunner", "", "Aktivmitglied", None, None, "2000-01-01"],
+                                ["x", 2, "neu@example.ch", "Neu", "Kind", "", "Aktivmitglied", None, None, "2000-01-01"]])
+    z.speichere_fairgate(alt); z.lade_letzten_fairgate()
+    srv = starte_server(z, port=0); threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        # jemand anderes im Team legt einen neueren Export in den gemeinsamen Ordner
+        import os, time
+        ziel = tmp_path / "Ausgabe" / z.fairgate_datei
+        ziel.write_bytes(neu); os.utime(ziel, (time.time() + 5, time.time() + 5))
+        with urllib.request.urlopen(urllib.request.Request(url + "/api/abruf", data=b"", method="POST")) as r:
+            a = json.loads(r.read())
+        assert a["abgleich"]["neueintritte"] == 1
+    finally:
+        srv.shutdown()

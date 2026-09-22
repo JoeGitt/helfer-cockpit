@@ -132,6 +132,8 @@ def tausch_skript_schreiben(app, neu, pid, starter):
     log = app.parent / "update.log"
     if sys.platform == "win32":
         pfad = app.parent / "update.ps1"
+        q = lambda p: str(p).replace("'", "''")       # PowerShell: ' in '…' verdoppeln (z. B. «O'Brien»)
+        app, neu, alt, log, starter = q(app), q(neu), q(alt), q(log), q(starter)
         pfad.write_text("\r\n".join([
             "$ErrorActionPreference = 'Continue'",
             f"$log = '{log}'",

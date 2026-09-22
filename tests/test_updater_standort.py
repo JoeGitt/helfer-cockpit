@@ -100,3 +100,11 @@ def test_installieren_nimmt_keine_url_aus_dem_browser(tmp_path, monkeypatch):
     except RuntimeError as e:
         assert "nicht mehr verfügbar" in str(e)
     assert aufrufe == []
+
+
+def test_tausch_skript_windows_mit_apostroph_im_pfad(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    basis = tmp_path / "O'Brien"; basis.mkdir()
+    w = updater.tausch_skript_schreiben(basis / "app", basis / "app.new", 1, basis / "app" / "Helfer-Cockpit.bat")
+    t = w.read_text(encoding="utf-8-sig")
+    assert "O''Brien" in t and "'O'Brien" not in t

@@ -577,3 +577,48 @@ def test_telefon_mit_zusatz_ist_keine_korrektur_und_import_ist_sauber():
     k2 = _k_erw(2, "Neu", "Kind", "neu@example.ch"); k2.telefon = "079 555 66 77 (Papa)"
     e = gleiche_ab([k, k2], [a], REGELN, HEUTE)
     assert e.neueintritte[0].telefon == "079 555 66 77"
+
+# ---- Review 22.09.2026: Ergebnis darf nicht von der Reihenfolge der Portal-Accounts abhängen ----
+
+def _ergebnis_sig(e):
+    return sorted((z.vorname, z.gruppe, z.zielwert, z.bemerkungen) for z in e.korrekturen), len(e.neueintritte), len(e.vorfragen)
+
+def test_mitglied_wahl_unabhaengig_von_reihenfolge_kind_ohne_fg_elternteil_mit_fg():
+    kind = _acc(1, "Lina", "Brunner", "lina@example.ch", None, gruppen=("Freiwillige",), ziel=0.0)
+    eltern = _acc(2, "Petra", "Brunner", "petra@example.ch", "FG-1", gruppen=("Freiwillige",), ziel=0.0)
+    anker = _acc(9, "Noah", "Keller", "noah@example.ch", "FG-9")
+    k = [_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(9, "Noah", "Keller", "noah@example.ch")]
+    a = gleiche_ab(k, [kind, eltern, anker], REGELN, HEUTE)
+    b = gleiche_ab(k, [eltern, kind, anker], REGELN, HEUTE)
+    assert _ergebnis_sig(a) == _ergebnis_sig(b)
+    lina = next(z for z in a.korrekturen if z.vorname == "Lina")
+    assert "Mitglied" in lina.gruppe and lina.bemerkungen == "FG-1"          # das Kind ist das Mitglied
+    assert not any(z.vorname == "Petra" and "Mitglied" in z.gruppe for z in a.korrekturen)
+
+def test_f1_bevorzugt_namenstreffer_unter_mehreren_fg_accounts():
+    eltern = _acc(1, "Petra", "Brunner", "petra@example.ch", "FG-1", gruppen=("Freiwillige",), ziel=0.0)
+    kind = _acc(2, "Lina", "Brunner", "lina@example.ch", "FG-1", gruppen=("Freiwillige",), ziel=0.0)
+    anker = _acc(9, "Noah", "Keller", "noah@example.ch", "FG-9")
+    k = [_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(9, "Noah", "Keller", "noah@example.ch")]
+    for reihe in ([eltern, kind, anker], [kind, eltern, anker]):
+        e = gleiche_ab(k, reihe, REGELN, HEUTE)
+        mitglieder = [z.vorname for z in e.korrekturen if "Mitglied" in z.gruppe]
+        assert mitglieder == ["Lina"]
+
+def test_familien_zweitaccount_wird_nie_mitglied():
+    eltern = _acc(1, "Petra", "Brunner", "petra@example.ch", "FG-1, FG-2", gruppen=("Freiwillige",), ziel=0.0)
+    anker = _acc(9, "Noah", "Keller", "noah@example.ch", "FG-9")
+    k = [_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(2, "Eva", "Brunner", "eva@example.ch"),
+         _k_erw(9, "Noah", "Keller", "noah@example.ch")]
+    e = gleiche_ab(k, [eltern, anker], REGELN, HEUTE)
+    assert not any(z.vorname == "Petra" and "Mitglied" in z.gruppe for z in e.korrekturen)
+    assert sorted(z.vorname for z in e.neueintritte) == ["Eva", "Lina"]
+
+def test_duplikat_waechter_verhindert_neueintritt_bei_anderer_schreibweise():
+    # Account trägt eine FG einer unbekannten Kategorie, ist aber dieselbe Person wie der neue Kontakt
+    alt = _acc(1, "lina", "BRUNNER", "Lina@Example.ch", "FG-77", gruppen=("Freiwillige",), ziel=0.0)
+    anker = _acc(9, "Noah", "Keller", "noah@example.ch", "FG-9")
+    k = [_k_erw(1, "Lina", "Brunner", "lina@example.ch"), _k_erw(9, "Noah", "Keller", "noah@example.ch"),
+         _k_erw(77, "Lina", "Brunner", "lina@example.ch", kategorie="Gönner")]
+    e = gleiche_ab(k, [alt, anker], REGELN, HEUTE)
+    assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1 and "FG-1" in e.duplikat_warnungen[0]
