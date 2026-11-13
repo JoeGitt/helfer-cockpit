@@ -4,6 +4,11 @@ Neueste Version zuoberst. Jede Version: Überschrift «## <Version> — <Datum>�
 Der Abschnitt einer Version wird beim Veröffentlichen zum Text des GitHub-Releases und erscheint im
 Cockpit unter Einstellungen → Über & Update.
 
+## 2.1.15 — 13.11.2026
+- Telefonnummern aus Fairgate gehen nur noch auf einen Account, dessen Vor- und Nachname mit dem Fairgate-Kontakt übereinstimmt. Läuft der Account auf einen Elternteil (FG-Nummer des Kinds), bleibt seine Nummer unangetastet.
+- Ist das Telefon im Portal leer, trägt der Import die Fairgate-Nummer ein.
+- Sind die Nummern nicht gleich, überschreibt das Cockpit nicht mehr von sich aus: Eine Vorfrage zeigt beide Nummern. «Fairgate-Nummer stimmt» schreibt sie per Import ins Portal, «Portal-Nummer stimmt» meldet, dass Fairgate nachzuführen ist (wird gemerkt, bis sich eine der Nummern ändert).
+
 ## 2.1.14 — 22.09.2026
 - Versionshinweise direkt im Cockpit: Einstellungen → Über & Update zeigt, was in jeder Version neu ist.
 - Nach einem Update weist das Cockpit einmal darauf hin, was sich geändert hat.

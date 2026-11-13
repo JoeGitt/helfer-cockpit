@@ -11,6 +11,7 @@ sind; die Gruppen-Spalte (ersetzt im Portal die ganze Liste!) wird nur befüllt,
 Marker-Gruppen ändern — und dann immer mit der vollständigen Zielliste.
 """
 import datetime
+import hashlib
 from . import telefon as tel
 from dataclasses import dataclass, field
 from .model import Typ, GRUPPE_MITGLIED, GRUPPE_FREIWILLIGE, GRUPPE_UNBEKANNTE
@@ -88,6 +89,10 @@ def _fairgate_adressen(k):
 
 def _portal_adressen(a):
     return {m.strip().lower() for m in (a.email, a.zusatz_email1, a.zusatz_email2) if m}
+
+
+def _tel_hash(text):
+    return hashlib.sha256(tel.ziffern(text).encode()).hexdigest()[:12]
 
 
 def _name(vn, nn):
@@ -269,6 +274,51 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
     def info(titel, fakten, a):
         return {"titel": titel, "fakten": list(fakten), "optionen": [], "wo": "Portal", "helper_id": a.id, "fg": ""}
 
+    def telefon_pruefen(a, k, felder):
+        """Telefon Fairgate → Portal (Entscheid 13.11.2026). Die FG-Nummer allein genügt nicht: ein
+        Mitglieds-Account kann auf einen Elternteil lauten (FG des Kinds) — dann ist die Fairgate-Nummer
+        die des Kinds und darf die des Elternteils nie ersetzen. Darum:
+        - Name des Accounts ≠ Name in Fairgate → Telefon wird nicht angefasst.
+        - Name gleich, Portal-Feld leer → Fairgate-Nummer per Import eintragen (überschreibt nichts).
+        - Name gleich, Nummern verschieden → nie automatisch überschreiben: die Portal-Nummer kann die
+          neuere sein. Vorfrage «Nummern sind nicht gleich» — Fairgate-Nummer übernehmen, Portal-Nummer
+          gilt (dann Fairgate nachführen) oder später klären.
+        Setzt felder["telefon"], wenn der Import die Nummer schreiben soll; liefert den Grund-Text."""
+        if not tel.ziffern(k.telefon) or _name(a.vorname, a.nachname) != _name(k.vorname, k.nachname):
+            return ""
+        if not tel.ziffern(a.telefon):
+            felder["telefon"] = tel.fuer_import(k.telefon)
+            return "Telefon aus Fairgate eintragen (im Portal leer)"
+        if tel.gleich(k.telefon, a.telefon):
+            return ""
+        # Schlüssel ändert sich, sobald eine der beiden Nummern ändert → dann wird neu gefragt.
+        # Die Nummern stehen nur gehasht darin, nicht im Klartext in entscheide.json.
+        schluessel = f"telefon:{a.fg}:{_tel_hash(a.telefon)}:{_tel_hash(k.telefon)}"
+        antwort = antwort_zu(entscheide.get(str(a.id)), schluessel, ("fairgate_nummer", "portal_nummer", "unklar"), [a.fg])
+        portal_nr, fairgate_nr = tel.fuer_import(a.telefon), tel.fuer_import(k.telefon)
+        if antwort == "fairgate_nummer":
+            felder["telefon"] = fairgate_nr
+            return "Telefon aus Fairgate übernehmen (deine Antwort)"
+        if antwort == "portal_nummer":
+            e.hinweise.append(info(f"{a.anzeigename} ({a.fg}): Telefon in Fairgate nachführen",
+                                   [f"Im Portal: {portal_nr} · in Fairgate: {fairgate_nr}",
+                                    "Deine Antwort: die Portal-Nummer stimmt — der Import ändert das Telefon nicht",
+                                    f"In Fairgate beim Kontakt {a.fg} das Feld «Handy» auf {portal_nr} ändern"], a))
+        elif antwort == "unklar":
+            klaer(f"{a.anzeigename}: Nummern sind nicht gleich — noch offen",
+                  [f"Im Portal: {portal_nr} · in Fairgate ({a.fg}): {fairgate_nr}",
+                   "Der Import ändert das Telefon nicht, bis du entschieden hast"],
+                  ["Nachfragen, welche Nummer stimmt → beim nächsten Abgleich die Vorfrage beantworten"],
+                  helper_id=a.id, fg=a.fg)
+        else:
+            vorfrage(a, "telefon", schluessel, [a.fg],
+                     f"Nummern sind nicht gleich — im Portal {portal_nr}, in Fairgate {fairgate_nr}",
+                     ["Die Portal-Nummer kann die neuere sein (selbst geändert), darum überschreibt das Cockpit sie nicht von sich aus"],
+                     [("fairgate_nummer", "Fairgate-Nummer stimmt", f"Import: Telefon {fairgate_nr} ins Portal"),
+                      ("portal_nummer", "Portal-Nummer stimmt", f"Kein Import — in Fairgate auf {portal_nr} nachführen (wird gemerkt, bis eine der Nummern ändert)"),
+                      ("unklar", "Weiss nicht — später klären", "Telefon bleibt, Klärfall in Schritt 2")])
+        return ""
+
     ersatz = {}     # alt.id → (alt, neu, fg): neuer Account ersetzt den alten (Vorfrage «Ersatz»)
 
     # ---- Phase 1: jeder Portal-Account → Soll-Zustand → Massnahme ----------------------
@@ -289,15 +339,15 @@ def gleiche_ab(kontakte, accounts, regeln, heute=None, entscheide=None):
                 felder = {}
                 if a.zielwert != regel.zielwert:
                     felder["zielwert"] = str(regel.zielwert)
-                if tel.ziffern(k.telefon) and not tel.gleich(k.telefon, a.telefon):
-                    felder["telefon"] = tel.fuer_import(k.telefon)
+                tel_grund = telefon_pruefen(a, k, felder)
                 felder["gruppe"] = _zielgruppen(a, weg=(GRUPPE_FREIWILLIGE, GRUPPE_UNBEKANNTE))
                 grund = "Mitglied: " + ", ".join(
                     [t for t, ok in (("Zielwert nachführen", "zielwert" in felder),
-                                     ("Telefon nachführen", "telefon" in felder),
+                                     (tel_grund, "telefon" in felder),
                                      ("überzählige Gruppe «Freiwillige/Unbekannte» entfernen", bool(felder["gruppe"]))) if ok])
                 korrektur(a, grund, **felder)
-                # Telefon nur im Portal, nicht in Fairgate: bewusst KEINE Massnahme (Entscheid 10.09.2026)
+                # Telefon nur im Portal, nicht in Fairgate: bewusst KEINE Massnahme (Entscheid 10.09.2026).
+                # Telefon-Regeln (Entscheid 13.11.2026) siehe telefon_pruefen().
                 _email_pruefen(e, a, k, regeln, heute)
             elif f1_wahl.get(a.fg) != a.id:
                 # Fall F2: Zweitaccount eines (bestehenden oder vorab gewählten) Mitglieds — Zielwert 0,

@@ -570,7 +570,8 @@ def test_telefon_mit_zusatz_ist_keine_korrektur_und_import_ist_sauber():
     e = gleiche_ab([k], [a], REGELN, HEUTE)
     assert not any(z.telefon for z in e.korrekturen)                    # gleiche Nummer, nur anders geschrieben
     k.telefon = "078 999 88 77 Papa"
-    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "fairgate_nummer", "fg": "FG-1",
+                                                              "schluessel": e_vorfrage_schluessel(k, a)}})
     z = next(z for z in e.korrekturen if z.telefon)
     assert z.telefon == "078 999 88 77"                                  # neue Nummer, ohne Zusatz
     # Neueintritt bekommt ebenfalls nur Ziffern und Leerzeichen
@@ -622,3 +623,72 @@ def test_duplikat_waechter_verhindert_neueintritt_bei_anderer_schreibweise():
          _k_erw(77, "Lina", "Brunner", "lina@example.ch", kategorie="Gönner")]
     e = gleiche_ab(k, [alt, anker], REGELN, HEUTE)
     assert e.neueintritte == [] and len(e.duplikat_warnungen) == 1 and "FG-1" in e.duplikat_warnungen[0]
+
+
+# ---- 13.11.2026: Telefon nur bei gleichem Namen, Abweichung nie still überschreiben ----
+
+def e_vorfrage_schluessel(k, a):
+    """Schlüssel der Telefon-Vorfrage, wie ihn der Abgleich vergibt."""
+    v = [v for v in gleiche_ab([k], [a], REGELN, HEUTE).vorfragen if v["fall"] == "telefon"]
+    return v[0]["schluessel"]
+
+def _mitglied(id, vn, nn, mail, fg, telefon):
+    return classify({"id": id, "firstName": vn, "lastName": nn, "email": mail, "phone": telefon, "adminRemarks": fg,
+                     "groups": [{"id": 1, "name": "Mitglied"}], "stateCache": {"requestedValue": 2, "plannedValue": 0}})
+
+def test_telefon_des_kinds_ueberschreibt_nie_den_elternaccount():
+    # Mitglieds-Account läuft auf die Mutter, trägt aber die FG-Nummer des Kinds
+    mutter = _mitglied(1, "Petra", "Brunner", "familie@example.ch", "FG-1", "079 111 11 11")
+    kind = _k_erw(1, "Lina", "Brunner", "familie@example.ch"); kind.telefon = "078 222 22 22"
+    e = gleiche_ab([kind], [mutter], REGELN, HEUTE)
+    assert not any(z.telefon for z in e.korrekturen) and e.vorfragen == []
+    # auch nicht, wenn das Telefon im Portal leer ist
+    mutter = _mitglied(1, "Petra", "Muster", "familie@example.ch", "FG-1", "")
+    e = gleiche_ab([kind], [mutter], REGELN, HEUTE)
+    assert not any(z.telefon for z in e.korrekturen) and e.vorfragen == []
+
+def test_telefon_kind_und_elternteil_mit_gleicher_fg_nur_das_kind_ist_betroffen():
+    kind_acc = _mitglied(1, "Lina", "Brunner", "familie@example.ch", "FG-1", "")
+    mutter = _mitglied(2, "Petra", "Brunner", "familie@example.ch", "FG-1", "079 111 11 11")
+    kind = _k_erw(1, "Lina", "Brunner", "familie@example.ch"); kind.telefon = "078 222 22 22"
+    e = gleiche_ab([kind], [kind_acc, mutter], REGELN, HEUTE)
+    mit_tel = [z for z in e.korrekturen if z.telefon]
+    assert [(z.vorname, z.telefon) for z in mit_tel] == [("Lina", "078 222 22 22")]
+
+def test_telefon_leer_im_portal_wird_bei_gleichem_namen_eingetragen():
+    a = _mitglied(1, "Lina", "Brunner", "lina@example.ch", "FG-1", "")
+    k = _k_erw(1, "lina", " Brunner", "lina@example.ch"); k.telefon = "+41 78 222 22 22"
+    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    z = next(z for z in e.korrekturen if z.telefon)
+    assert z.telefon == "078 222 22 22" and "im Portal leer" in z.grund and e.vorfragen == []
+
+def test_telefon_abweichend_wird_vorfrage_statt_ueberschrieben():
+    a = _mitglied(1, "Lina", "Brunner", "lina@example.ch", "FG-1", "079 111 11 11")
+    k = _k_erw(1, "Lina", "Brunner", "lina@example.ch"); k.telefon = "078 222 22 22"
+    e = gleiche_ab([k], [a], REGELN, HEUTE)
+    assert not any(z.telefon for z in e.korrekturen)
+    v = next(v for v in e.vorfragen if v["fall"] == "telefon")
+    assert "Nummern sind nicht gleich" in v["frage"] and "079 111 11 11" in v["frage"] and "078 222 22 22" in v["frage"]
+    assert [o["antwort"] for o in v["optionen"]] == ["fairgate_nummer", "portal_nummer", "unklar"]
+    assert "079" not in v["schluessel"] and "078" not in v["schluessel"]       # Nummern nicht im Klartext
+    sch = v["schluessel"]
+    # Fairgate-Nummer stimmt → Import schreibt sie
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "fairgate_nummer", "fg": "FG-1", "schluessel": sch}})
+    z = next(z for z in e.korrekturen if z.telefon)
+    assert z.telefon == "078 222 22 22" and "deine Antwort" in z.grund and e.vorfragen == []
+    # Portal-Nummer stimmt → kein Import, Hinweis «in Fairgate nachführen»
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "portal_nummer", "fg": "", "schluessel": sch}})
+    assert not any(z.telefon for z in e.korrekturen) and e.vorfragen == []
+    assert any("Telefon in Fairgate nachführen" in h["titel"] for h in e.hinweise)
+    # Weiss nicht → Klärfall, kein Import
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "unklar", "fg": "", "schluessel": sch}})
+    assert not any(z.telefon for z in e.korrekturen) and e.vorfragen == []
+    assert any("Nummern sind nicht gleich" in kf["titel"] for kf in e.klaerliste)
+    # eine der Nummern ändert → gemerkte Antwort gilt nicht mehr, neu fragen
+    k.telefon = "076 333 33 33"
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "portal_nummer", "fg": "", "schluessel": sch}})
+    assert any(v["fall"] == "telefon" for v in e.vorfragen)
+    # Fairgate nachgeführt → gleich, keine Frage, kein Import
+    k.telefon = "079 111 11 11 (Mama)"
+    e = gleiche_ab([k], [a], REGELN, HEUTE, entscheide={"1": {"antwort": "portal_nummer", "fg": "", "schluessel": sch}})
+    assert e.vorfragen == [] and not any(z.telefon for z in e.korrekturen) and e.hinweise == []
