@@ -609,8 +609,8 @@ function pruefeSchritt1() {
   $("wiz-btn-2").disabled = !(W.portalOk && W.abgleich && (!unbekannt || W.ack) && !offen);
 }
 // ---- Vorfragen: mögliche Zweitaccounts, die VOR der Import-Datei beantwortet werden müssen ----
-const ANTWORT_LABEL = { zweitaccount: "Zweitaccount", andere: "Andere Person", unklar: "Noch offen — Klärfall", elternteil: "Elternteil (Zweitaccount)", gleiche_person: "Dieselbe Person", ersatz: "Ersatz-Account" };
-const FALL_LABEL = { nachname: "gleicher Nachname", name: "gleicher Name, andere E-Mail", email: "gleiche E-Mail" };
+const ANTWORT_LABEL = { zweitaccount: "Zweitaccount", andere: "Andere Person", unklar: "Noch offen — Klärfall", elternteil: "Elternteil (Zweitaccount)", gleiche_person: "Dieselbe Person", ersatz: "Ersatz-Account", fairgate_nummer: "Fairgate-Nummer übernehmen", portal_nummer: "Portal-Nummer stimmt — Fairgate nachführen" };
+const FALL_LABEL = { nachname: "gleicher Nachname", name: "gleicher Name, andere E-Mail", email: "gleiche E-Mail", telefon: "Nummern sind nicht gleich" };
 const MIT_FG = new Set(["zweitaccount", "elternteil", "gleiche_person", "ersatz"]);
 function renderVorfragen(d) {
   const el = $("wiz-1-vorfragen"); if (!el) return;
@@ -620,7 +620,7 @@ function renderVorfragen(d) {
   let html = "";
   if (vf.length) {
     html += `<div class="vf-box"><h3>${ic("alert", "sm")}Vorfragen, bevor die Import-Datei entsteht <span class="cnt">${vf.length}</span></h3>
-      <p class="hint">Diese Portal-Accounts haben keine FG-Nummer, passen aber zu einem Mitglied in Fairgate — über Nachname, Name oder E-Mail. Deine Antwort entscheidet, was der Import schreibt; die Import-Datei entsteht danach neu. Ohne Antwort kommt der Account nicht in die Datei.</p>
+      <p class="hint">Diese Portal-Accounts haben keine FG-Nummer, passen aber zu einem Mitglied in Fairgate — über Nachname, Name oder E-Mail. Oder Name und FG-Nummer stimmen, aber die Telefonnummern sind nicht gleich. Deine Antwort entscheidet, was der Import schreibt; die Import-Datei entsteht danach neu. Ohne Antwort kommt der Account nicht in die Datei.</p>
       <ul class="vf">${vf.map((v) => {
         const id = v.helper_id, k = v.kandidaten || [];
         const wahl = `<select data-vf-fg="${id}" aria-label="Welches Kind">${k.map((x) => `<option value="${esc(x.fg)}">${esc(x.name)} (${esc(x.fg)})</option>`).join("")}</select>`;
@@ -629,7 +629,7 @@ function renderVorfragen(d) {
           <div class="kand"><div class="frage">${esc(v.frage)}</div>${k.map((x) => `<div>· <b>${esc(x.name)}</b> (${esc(x.fg)})${x.telefon ? ` · Telefon ${esc(x.telefon)}` : ""}${x.portal_account ? ` · Portal-Account ${esc(x.portal_account)}` : ""} ${plink(x.portal_url, "Im Portal")}</div>`).join("")}${(v.fakten || []).map((f) => `<div class="sub">${esc(f)}</div>`).join("")}${v.bemerkung ? `<div class="sub">Bemerkung im Portal: «${esc(v.bemerkung)}» — die FG-Nummer müsste dann von Hand dazu, Zielwert und Gruppe setzt der Import</div>` : ""}</div>
           <div class="antw">${(v.optionen || []).map((o) => `<label title="${esc(o.folge)}"><input type="radio" name="vf-${id}" value="${esc(o.antwort)}"><span>${esc(o.label)}${o.mit_fg ? ` ${k.length > 1 ? wahl : `<b>${esc(k[0] ? k[0].name : "")}</b>`}` : ""}<small>${esc(o.folge)}</small></span></label>`).join("")}</div></li>`; }).join("")}</ul>
       <div class="vf-foot"><span class="sub" id="vf-stand">0 von ${vf.length} beantwortet</span><button class="btn primary" id="vf-btn" disabled>${ic("check")}Antworten übernehmen</button></div>
-      <p class="hint" style="margin:8px 0 0">«Andere Person» merkt sich das Cockpit dauerhaft — die Frage kommt nicht wieder. «Zweitaccount» erledigt sich mit dem Import von selbst.</p></div>`;
+      <p class="hint" style="margin:8px 0 0">«Andere Person» und «Portal-Nummer stimmt» merkt sich das Cockpit dauerhaft — die Frage kommt nicht wieder (beim Telefon erst, wenn sich eine der Nummern ändert). «Zweitaccount» erledigt sich mit dem Import von selbst.</p></div>`;
   }
   const unklar = beantwortet.filter(([, e]) => e.antwort === "unklar").map(([id]) => id);
   if (beantwortet.length) {

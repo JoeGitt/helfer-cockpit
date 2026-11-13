@@ -685,3 +685,13 @@ def test_abruf_nimmt_neueren_export_aus_dem_gemeinsamen_ordner(tmp_path):
         assert a["abgleich"]["neueintritte"] == 1
     finally:
         srv.shutdown()
+
+
+def test_antwort_portal_nummer_wird_dauerhaft_gemerkt(tmp_path):
+    z = _zustand(tmp_path)
+    z.speichere_entscheide({"7": {"antwort": "portal_nummer", "name": "X", "fall": "telefon", "schluessel": "telefon:FG-1:a:b"},
+                            "8": {"antwort": "fairgate_nummer", "name": "Y", "fall": "telefon", "schluessel": "telefon:FG-2:c:d"}})
+    gespeichert = json.loads((tmp_path / "Ausgabe" / "entscheide.json").read_text())
+    assert set(gespeichert) == {"7"} and gespeichert["7"]["schluessel"] == "telefon:FG-1:a:b"
+    alle, _ = z.lade_entscheide()
+    assert alle["8"]["antwort"] == "fairgate_nummer"            # nur für die Sitzung, erledigt sich per Import

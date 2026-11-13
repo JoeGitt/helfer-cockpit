@@ -29,7 +29,9 @@ STATIC_RESOLVED = STATIC.resolve()
 SICHTEN = ("saison", "halbjahr")
 
 
-ANTWORTEN = ("zweitaccount", "familie", "andere", "unklar", "elternteil", "gleiche_person", "ersatz")
+ANTWORTEN = ("zweitaccount", "familie", "andere", "unklar", "elternteil", "gleiche_person", "ersatz",
+             "fairgate_nummer", "portal_nummer")
+DAUERHAFT = ("andere", "portal_nummer")   # kommen nicht wieder (Telefon: bis eine der Nummern ändert)
 
 
 @dataclass
@@ -141,7 +143,7 @@ class Zustand:
         return {**gespeichert, **(self.entscheide or {})}, gespeichert
 
     def speichere_entscheide(self, neue):
-        """neue: {helper_id: {antwort, fg, name} | None}. «andere» wird dauerhaft gespeichert,
+        """neue: {helper_id: {antwort, fg, name} | None}. «andere» und «portal_nummer» werden dauerhaft gespeichert,
         «zweitaccount»/«unklar» nur für die Sitzung (lösen sich selbst bzw. sollen wieder gefragt werden),
         None löscht die Antwort."""
         _, gespeichert = self.lade_entscheide()
@@ -154,7 +156,7 @@ class Zustand:
             eintrag = {"antwort": ent.get("antwort"), "fg": ent.get("fg") or "", "name": ent.get("name") or "",
                        "fall": ent.get("fall") or "", "schluessel": ent.get("schluessel") or "",
                        "kandidaten": ent.get("kandidaten") or "", "zeit": datetime.date.today().isoformat()}
-            if eintrag["antwort"] == "andere":
+            if eintrag["antwort"] in DAUERHAFT:
                 gespeichert[hid] = eintrag             # dauerhaft: die Frage kommt nicht wieder
             elif eintrag["antwort"] in ANTWORTEN:
                 self.entscheide[hid] = eintrag         # nur diese Sitzung: erledigt sich per Import
